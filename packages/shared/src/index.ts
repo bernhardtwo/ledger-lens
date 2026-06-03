@@ -14,3 +14,7 @@ export interface FeatureBoundary {
   readonly kind: ComputeKind;
   readonly rationale: string;
 }
+
+// Domain core (Phase 1). Money & currency land first; transactions/accounts next.
+export * from "./domain/currency.js";
+export * from "./domain/money.js";
