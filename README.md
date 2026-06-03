@@ -69,3 +69,7 @@ This repo is built in phases; each is a meaningful, reviewable increment.
 This project is developed with Claude Code. Conventions live in
 [`CLAUDE.md`](CLAUDE.md). Specs precede code (`/new-feature-spec`); big decisions
 get an ADR (`/new-adr`); generated code is reviewed before merge (`/review`).
+
+## License
+
+Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
