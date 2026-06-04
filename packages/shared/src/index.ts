@@ -15,6 +15,11 @@ export interface FeatureBoundary {
   readonly rationale: string;
 }
 
-// Domain core (Phase 1). Money & currency land first; transactions/accounts next.
+// Domain core (Phase 1). Money & currency are the foundation; the normalized
+// Account/Statement/Transaction model builds on them.
 export * from "./domain/currency.js";
 export * from "./domain/money.js";
+export * from "./domain/iso-date.js";
+export * from "./domain/account.js";
+export * from "./domain/statement.js";
+export * from "./domain/transaction.js";
