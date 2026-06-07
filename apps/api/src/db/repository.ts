@@ -192,6 +192,17 @@ export async function getTransactionById(db: Database, accountId: string, id: st
   return rows[0] ?? null;
 }
 
+/**
+ * Thrown when a pagination cursor cannot be decoded/validated. A typed error (not
+ * a bare `Error`) so the HTTP edge can map it to `400` without string-matching.
+ */
+export class InvalidCursorError extends Error {
+  override readonly name = "InvalidCursorError";
+  constructor() {
+    super("malformed pagination cursor");
+  }
+}
+
 /** Encode a `(transaction_date, id)` keyset position as an opaque cursor. */
 function encodeCursor(date: string, id: string): string {
   return Buffer.from(`${date}|${id}`, "utf8").toString("base64url");
@@ -209,12 +220,12 @@ function decodeCursor(cursor: string): { date: string; id: string } {
   const raw = Buffer.from(cursor, "base64url").toString("utf8");
   const separator = raw.indexOf("|");
   if (separator === -1) {
-    throw new Error("malformed pagination cursor");
+    throw new InvalidCursorError();
   }
   const date = IsoDateSchema.safeParse(raw.slice(0, separator));
   const id = CursorIdSchema.safeParse(raw.slice(separator + 1));
   if (!date.success || !id.success) {
-    throw new Error("malformed pagination cursor");
+    throw new InvalidCursorError();
   }
   return { date: date.data, id: id.data };
 }

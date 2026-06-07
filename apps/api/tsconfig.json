@@ -1,7 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    // NestJS decorators. We deliberately do NOT enable emitDecoratorMetadata:
+    // DI is token-based (`@Inject(TOKEN)`), so esbuild/vitest can transform the
+    // decorators without metadata, and `verbatimModuleSyntax` stays on.
+    "experimentalDecorators": true,
+    "types": ["node", "express", "multer"]
   },
   "include": ["src/**/*.ts"]
 }
