@@ -8,6 +8,13 @@
       "when": 1780851373281,
       "tag": "0000_plain_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780873601144,
+      "tag": "0001_worried_logan",
+      "breakpoints": true
     }
   ]
 }

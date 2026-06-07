@@ -8,7 +8,12 @@
  *  - `listTransactions` / `getTransactionById`: read back, with the `raw_row`
  *    excluded from the default/list projection and present only on an audit fetch.
  */
-import { type CurrencyCode, type Direction, IsoDateSchema } from "@ledger-lens/shared";
+import {
+  type Category,
+  type CurrencyCode,
+  type Direction,
+  IsoDateSchema,
+} from "@ledger-lens/shared";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TransactionDraft } from "../ingestion/types.js";
@@ -27,6 +32,7 @@ const listProjection = {
   amountMinor: transactions.amountMinor,
   currencyCode: transactions.currencyCode,
   fingerprint: transactions.fingerprint,
+  category: transactions.category,
 } as const;
 
 /** A transaction as returned by the list projection (no `rawRow`). */
@@ -41,6 +47,8 @@ export interface TransactionListRow {
   readonly amountMinor: bigint;
   readonly currencyCode: CurrencyCode;
   readonly fingerprint: string;
+  /** Assigned category, or `null` when not yet categorized (Phase 2, ADR-0006). */
+  readonly category: Category | null;
 }
 
 export interface PersistIngestionInput {

@@ -1,6 +1,11 @@
-import { TransactionListItemSchema, money, toMoneyDTO } from "@ledger-lens/shared";
+import { CategorySchema, TransactionListItemSchema, money, toMoneyDTO } from "@ledger-lens/shared";
 import { z } from "zod";
 import type { TransactionListRow } from "../../db/repository.js";
+
+/** List item enriched with its category (Phase 2): `null` until categorized. */
+export const TransactionListItemResponseSchema = TransactionListItemSchema.extend({
+  category: CategorySchema.nullable(),
+});
 
 /** Query of `GET /accounts/:accountId/transactions`. `limit` is coerced + clamped. */
 export const ListQuerySchema = z.object({
@@ -16,7 +21,7 @@ export type ListQuery = z.infer<typeof ListQuerySchema>;
 
 /** Response: the list projection (no `rawRow`) + an opaque next-page cursor. */
 export const TransactionsPageResponseSchema = z.object({
-  items: z.array(TransactionListItemSchema),
+  items: z.array(TransactionListItemResponseSchema),
   nextCursor: z.string().nullable(),
 });
 
@@ -30,7 +35,7 @@ export type TransactionsPageResponse = z.infer<typeof TransactionsPageResponseSc
  */
 export function toTransactionListItem(
   row: TransactionListRow,
-): z.input<typeof TransactionListItemSchema> {
+): z.input<typeof TransactionListItemResponseSchema> {
   return {
     id: row.id,
     accountId: row.accountId,
@@ -41,5 +46,6 @@ export function toTransactionListItem(
     direction: row.direction,
     amount: toMoneyDTO(money(row.amountMinor, row.currencyCode)),
     fingerprint: row.fingerprint,
+    category: row.category,
   };
 }

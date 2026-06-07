@@ -13,7 +13,7 @@
  *  - `raw_row` is `jsonb`, retained for audit/replay and **excluded from the
  *    default/list projection** by the repository (it is never SELECTed there).
  */
-import type { AccountKind, CurrencyCode, Direction } from "@ledger-lens/shared";
+import type { AccountKind, Category, CurrencyCode, Direction } from "@ledger-lens/shared";
 import {
   bigint,
   char,
@@ -71,6 +71,12 @@ export const transactions = pgTable(
     currencyCode: char("currency_code", { length: 3 }).$type<CurrencyCode>().notNull(),
     fingerprint: text("fingerprint").notNull(),
     rawRow: jsonb("raw_row").$type<Record<string, string>>().notNull(),
+    // Enrichment (Phase 2, ADR-0006). All nullable: NULL = not yet categorized;
+    // any value (incl. "uncategorized") = done. The LLM assigns `category`;
+    // `category_model` + `categorized_at` are kept for audit/eval.
+    category: text("category").$type<Category>(),
+    categoryModel: text("category_model"),
+    categorizedAt: timestamp("categorized_at", { withTimezone: true, mode: "date" }),
   },
   (table) => [
     // Idempotency: re-importing the same statement cannot duplicate a row.
