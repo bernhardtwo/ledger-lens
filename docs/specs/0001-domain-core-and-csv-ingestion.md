@@ -238,27 +238,51 @@ rows (distinct occurrence ordinals → distinct fingerprints) both insert.
 
 ## API surface
 
-NestJS controller `apps/api/src/ingestion/ingestion.controller.ts`. Zod at both
-edges (via a small `ZodValidationPipe`); HTTP DTOs are Zod-inferred.
+NestJS controllers under `apps/api/src/http/` (a thin edge over the deterministic
+ingestion core + persistence repository). Zod at both edges (via a small
+`ZodValidationPipe`); HTTP DTOs are Zod-inferred. Multipart via Express + Multer
+(in-memory, 5 MB cap, CSV content-type filter). DI is token-based (`@Inject`).
 
 - **`POST /accounts/:accountId/statements`** — multipart upload, field `file`
-  (CSV). Validates `accountId` (uuid) and content type. Returns:
+  (CSV). Validates `accountId` (uuid) and content type, runs ingestion, persists,
+  and returns the report. `201` when a statement was created, `200` on an
+  idempotent no-op. Returns:
   ```ts
-  IngestResponseSchema = z.object({
-    statementId: z.string().uuid(),
+  StatementIngestResponseSchema = z.object({
+    statementId: z.string().uuid().nullable(),  // null on idempotent no-op / header-only
     profileId: z.string(),
-    accepted: z.number().int(),
-    skipped: z.number().int(),                  // duplicates
+    inserted: z.number().int().nonnegative(),   // new transactions persisted
+    skipped:  z.number().int().nonnegative(),   // duplicates skipped (ON CONFLICT)
     rejected: z.array(z.object({ row: z.number().int(), reason: z.string() })),
   });
   ```
-- **`GET /accounts/:accountId/transactions?limit&cursor`** — Zod-validated query;
-  returns `{ items: Transaction[], nextCursor?: string }`. Keyset pagination on
-  `(posted_at, id)`. `Money.amount` is serialized as a string of minor units in
-  JSON (bigint is not JSON-native) and re-coerced by `MoneySchema` on the way out.
+  (`inserted`/`skipped` come from the persistence layer — more precise than the
+  earlier `accepted` sketch, which conflated parsed-vs-persisted.)
+- **`GET /accounts/:accountId/transactions?limit&cursor`** — Zod-validated query
+  (`limit` coerced, clamped 1..200, default 50; `cursor` opaque). Returns
+  `{ items: TransactionListItem[], nextCursor: string | null }` — the list
+  projection (no `raw_row`). Keyset pagination on `(transaction_date, id)`.
+  `Money.amount` is serialized as a `MoneyDTO` string of minor units (bigint is
+  not JSON-native); no `bigint` reaches the wire.
 
 Both responses are parsed through their Zod schema before send (output trust
 boundary). All shared schemas imported from `@ledger-lens/shared`.
+
+**HTTP error mapping.** Fatal ingestion failures and other edge errors map as:
+`unknown-profile` / `too-many-rejected` → **422**; `empty-file` / `not-utf8` →
+**400**; malformed cursor → **400**; bad `accountId`/query (Zod) → **400**; missing
+file → **400**; non-CSV content type → **415**; file over 5 MB → **413** (enforced
+mid-stream by Multer's `limits`, not just a post-buffer check); unknown account →
+**404**. A global filter maps the domain errors (`IngestionError`,
+`InvalidCursorError`, Multer errors) and delegates the rest; nothing escapes as a
+raw 500.
+
+**Account vs. file currency.** A statement's profile fixes the transaction
+currency (e.g. `bank-a@v1` → USD). The upload endpoint rejects a file whose
+currency does not match the account's `currency_code` with **422**
+(`currency-mismatch`), checked **before persisting** — so EUR rows can never be
+silently written under a USD account. (This resolves the account-vs-file aspect of
+Open Question 2; multi-currency *per file* remains out of scope.)
 
 ## Testing strategy
 
