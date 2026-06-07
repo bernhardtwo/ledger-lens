@@ -197,6 +197,8 @@ accounts(id uuid pk, name text, institution text, currency_code char(3),
          kind text)                                        // "bank"|"credit"
 statements(id uuid pk, account_id uuid fk, source_filename text,
            profile_id text, row_count int, ingested_at timestamptz)
+                                                           // row_count = ACCEPTED rows in
+                                                           // the file (see note below)
 transactions(
   id uuid pk default, account_id uuid fk, statement_id uuid fk,
   transaction_date date not null,                          // canonical date
@@ -204,14 +206,35 @@ transactions(
   description text, direction text,                        // "debit"|"credit"
   amount_minor bigint, currency_code char(3),              // exponent from registry
   fingerprint text, raw_row jsonb,                         // raw_row excluded from list projection
-  unique(account_id, fingerprint)                          // idempotency
+  unique(account_id, fingerprint),                         // idempotency
+  index(account_id, transaction_date, id)                  // account-scoped keyset pagination
 )
 ```
 
-`bigint` columns map to JS `bigint` via Drizzle's `mode: "bigint"`. Account is
-assumed to pre-exist (created out of band / seeded) this phase; statement is
-created per ingest. Insert uses `onConflictDoNothing` on the unique index for
-idempotency, and the count of skipped rows comes from the diff.
+FKs are `on delete cascade` (deleting an account removes its statements and
+transactions; deleting a statement removes its transactions). `bigint` columns map
+to JS `bigint` via Drizzle's `mode: "bigint"`; `date` columns use Drizzle string
+mode (`YYYY-MM-DD`, matching `IsoDate`). Account is assumed to pre-exist (seeded
+with fixed UUIDs) this phase; statements are created per ingest.
+
+**Keyset pagination index.** The list query is account-scoped
+(`GET /accounts/:id/transactions`), so the covering index is
+`(account_id, transaction_date, id)` — a refinement of an earlier
+`(transaction_date, id)` sketch.
+
+**`row_count` semantics.** `row_count` is the number of **accepted** rows parsed
+from the file, **not** the number of transactions this statement "owns" after
+dedupe. On a partial re-import those differ: a row already present (same
+`(account_id, fingerprint)`) keeps its original statement, so the new statement
+owns fewer transactions than it parsed.
+
+**Persist idempotency rule (no orphan statements).** Persisting an ingestion runs
+in one DB transaction: insert the statement, bulk-insert its transactions with
+`ON CONFLICT (account_id, fingerprint) DO NOTHING ... RETURNING`, then **if zero
+rows were inserted, delete the just-created statement**. So a re-import (or a
+header-only file) that brings no new transactions leaves no statement behind;
+`inserted`/`skipped` counts come from the returned rows. Two legitimately-identical
+rows (distinct occurrence ordinals → distinct fingerprints) both insert.
 
 ## API surface
 
