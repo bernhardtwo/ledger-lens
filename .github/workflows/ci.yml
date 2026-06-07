@@ -33,5 +33,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Integration tests spin up a disposable Postgres via testcontainers;
+      # GitHub Actions ubuntu runners have Docker available out of the box.
+      - name: Integration tests
+        run: pnpm test:integration
+
       # Phase 5 will add an "eval gate" step here that fails the build
       # if prompt/agent accuracy regresses or token cost rises.

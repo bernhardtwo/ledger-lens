@@ -1,8 +1,11 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     include: ["packages/**/*.{test,spec}.ts", "apps/**/*.{test,spec}.ts"],
+    // Integration tests (*.itest.ts) need Docker; they run via the separate
+    // vitest.integration.config.ts (`pnpm test:integration`), not here.
+    exclude: [...configDefaults.exclude, "**/*.itest.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
