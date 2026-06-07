@@ -134,12 +134,19 @@ bytes → [1 sniff dialect] → [2 select profile] → [3 map+normalize rows]
 3. **Map + normalize** (pure `normalizeRow(profile, rawRow) -> NormalizedRow`):
    parse date to ISO (declared format, no locale guessing), parse amount via
    `Money.fromDecimalString` against `profile.currency`, derive `direction` and a
-   non-negative `amount`.
+   non-negative `amount`. Two deterministic per-row rejections live here (collected,
+   non-fatal — see step 4): a **non-positive amount** is rejected with reason
+   `"non-positive amount"` (the binary debit/credit model has no neutral direction,
+   so `0` has no derivable direction); and for the `debit-credit-cols` strategy a row
+   with **both or neither** column filled is rejected as `"ambiguous debit/credit
+   columns"`.
 4. **Zod validation** at the boundary: each row → `TransactionSchema`
    (`omit` server-assigned `id`/`statementId`). Malformed rows are collected, not
    fatal: the response reports `accepted` and `rejected[]` (row index + reason).
-   Threshold: if `rejected/total > 0.5`, fail the whole ingest (`422`) — likely a
-   wrong profile.
+   A row whose field count differs from the header is a **graceful per-row reject**
+   with reason `"column count mismatch"` — never a thrown parse error that aborts
+   the file. Threshold: if `rejected/total > 0.5`, fail the whole ingest (`422`) —
+   likely a wrong profile.
 5. **Fingerprint + idempotency.** `fingerprint = sha256(accountId |
    transactionDate | amountMinor | direction | normalizeDescription(description) |
    occurrenceOrdinal)`. Two decisions are encoded here:
@@ -158,8 +165,24 @@ bytes → [1 sniff dialect] → [2 select profile] → [3 map+normalize rows]
 6. **Persist** transactions + a `Statement` row in one transaction (see below).
 
 Error handling is structured: a typed `IngestionError` discriminated union
-(`unknown-profile` | `not-utf8` | `too-many-rejected`) maps to HTTP codes in a
-NestJS exception filter. No throwing of raw library errors past the boundary.
+(`empty-file` | `unknown-profile` | `not-utf8` | `too-many-rejected`) for whole-file
+failures maps to HTTP codes in a NestJS exception filter; single-row problems are
+the collected `rejected[]` reasons above (`column count mismatch`, `invalid date …`,
+`unparseable amount …`, `non-positive amount`, `ambiguous debit/credit columns`,
+plus the Zod structural message, e.g. an empty description). No raw library errors
+cross the boundary.
+
+**Empty file vs. header-only (deliberate distinction).** A *truly empty* file (no
+header row / no content) is rejected up front as `empty-file` — it honours the
+"reject empty files early" rule and never masquerades as `unknown-profile`. A
+*header-only* file (valid headers, zero data rows) is a **valid success**: it
+returns `{ profileId, accepted: [], rejected: [] }` — an empty-but-valid statement,
+not an error.
+
+**Encoding (this phase):** input must be **UTF-8**; a UTF-8 BOM is stripped so it
+cannot corrupt the header signature. Non-UTF-8 bytes are rejected up front
+(`not-utf8`). Decoding other encodings (e.g. **windows-1252**, common in Latin-American
+bank exports) is a deliberate **future addition**, not an oversight.
 
 ## Persistence
 
@@ -243,6 +266,8 @@ boundary). All shared schemas imported from `@ledger-lens/shared`.
   math will be `deterministic`).
 - The agent loop, MCP domain server (Phases 3-4).
 - LLM-based profile inference for unknown CSV layouts (see Open Questions).
+- Non-UTF-8 input decoding (e.g. windows-1252, common in Latin-American bank
+  exports). UTF-8 only this phase; this is a deliberate future addition.
 - Auth/multi-tenant, account creation UI, currency FX conversion.
 
 ## Open questions
