@@ -13,10 +13,10 @@ import {
   type CurrencyCode,
   type Direction,
   IsoDateSchema,
+  type TransactionDraft,
 } from "@ledger-lens/shared";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { TransactionDraft } from "../ingestion/types.js";
 import type { Database } from "./client.js";
 import { statements, transactions } from "./schema.js";
 

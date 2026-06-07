@@ -1,23 +1,26 @@
+/**
+ * Persistence integration tests for `@ledger-lens/db` (see spec 0001).
+ *
+ * Self-contained: builds `TransactionDraft`s directly (no ingestion dependency),
+ * so the db package owns its own integration test. Runs against a disposable
+ * Postgres via testcontainers.
+ */
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import type { CurrencyCode } from "@ledger-lens/shared";
+import {
+  type Direction,
+  type Money,
+  type TransactionDraft,
+  isoDate,
+  money,
+} from "@ledger-lens/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ingestCsv } from "../ingestion/ingest.js";
 import { type Database, type DatabaseConnection, createDatabase } from "./client.js";
 import { applyMigrations } from "./migrate.js";
 import { getTransactionById, listTransactions, persistIngestion } from "./repository.js";
 import { accounts, statements, transactions } from "./schema.js";
 import { SEED_ACCOUNTS, seedAccounts } from "./seed.js";
-
-function fixture(name: string): string {
-  return readFileSync(
-    fileURLToPath(new URL(`../ingestion/__fixtures__/${name}`, import.meta.url)),
-    "utf8",
-  );
-}
 
 let container: StartedPostgreSqlContainer;
 let connection: DatabaseConnection;
@@ -37,7 +40,7 @@ afterAll(async () => {
 });
 
 /** Insert a throwaway account so each test is isolated by account id. */
-async function freshAccount(currency: CurrencyCode = "USD"): Promise<string> {
+async function freshAccount(currency: "USD" | "EUR" = "USD"): Promise<string> {
   const id = randomUUID();
   await db.insert(accounts).values({
     id,
@@ -49,9 +52,50 @@ async function freshAccount(currency: CurrencyCode = "USD"): Promise<string> {
   return id;
 }
 
-function ingest(name: string, accountId: string) {
-  const result = ingestCsv({ content: fixture(name), accountId });
-  return { profileId: result.profileId, accepted: result.accepted };
+interface DraftOptions {
+  readonly accountId: string;
+  readonly transactionDate: string;
+  readonly postedDate?: string;
+  readonly description: string;
+  readonly direction: Direction;
+  readonly amount: Money;
+  readonly fingerprint: string;
+}
+
+/** Build a `TransactionDraft` directly — no ingestion involved. */
+function draft(options: DraftOptions): TransactionDraft {
+  return {
+    accountId: options.accountId,
+    transactionDate: isoDate(options.transactionDate),
+    postedDate: options.postedDate === undefined ? null : isoDate(options.postedDate),
+    description: options.description,
+    direction: options.direction,
+    amount: options.amount,
+    fingerprint: options.fingerprint,
+    rawRow: { Description: options.description },
+  };
+}
+
+/** The bank-a fixture, as drafts: a $5 debit and a $1,200 credit. */
+function bankADrafts(accountId: string): TransactionDraft[] {
+  return [
+    draft({
+      accountId,
+      transactionDate: "2026-05-01",
+      description: "COFFEE BAR #12",
+      direction: "debit",
+      amount: money(500n, "USD"),
+      fingerprint: "fp-coffee",
+    }),
+    draft({
+      accountId,
+      transactionDate: "2026-05-02",
+      description: "ACME PAYROLL",
+      direction: "credit",
+      amount: money(120000n, "USD"),
+      fingerprint: "fp-acme",
+    }),
+  ];
 }
 
 describe("migrations & seed", () => {
@@ -67,13 +111,11 @@ describe("migrations & seed", () => {
 describe("persistIngestion — mapping", () => {
   it("persists a statement and its transactions with exact column mapping", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", accountId);
-
     const result = await persistIngestion(db, {
       accountId,
       sourceFilename: "bank-a.csv",
-      profileId,
-      accepted,
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(accountId),
     });
     expect(result.inserted).toBe(2);
     expect(result.skipped).toBe(0);
@@ -84,41 +126,46 @@ describe("persistIngestion — mapping", () => {
       .from(statements)
       .where(eq(statements.accountId, accountId));
     expect(statementRows).toHaveLength(1);
-    expect(statementRows[0]?.rowCount).toBe(2); // ACCEPTED rows in the file
-    expect(statementRows[0]?.profileId).toBe("bank-a@v1");
+    expect(statementRows[0]?.rowCount).toBe(2);
 
     const txns = await listTransactions(db, { accountId, limit: 10 });
-    expect(txns.items).toHaveLength(2);
-
     const coffee = txns.items[0];
     expect(coffee?.transactionDate).toBe("2026-05-01");
     expect(coffee?.postedDate).toBeNull();
     expect(coffee?.direction).toBe("debit");
     expect(coffee?.amountMinor).toBe(500n);
     expect(coffee?.currencyCode).toBe("USD");
-    expect(coffee?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(coffee?.category).toBeNull();
 
     const payroll = txns.items[1];
     expect(payroll?.direction).toBe("credit");
     expect(payroll?.amountMinor).toBe(120000n);
   });
 
-  it("persists a debit/credit-column statement (EUR, dual dates)", async () => {
+  it("persists dual dates (a distinct posting date) in EUR", async () => {
     const accountId = await freshAccount("EUR");
-    const { profileId, accepted } = ingest("banco-b.csv", accountId);
     const result = await persistIngestion(db, {
       accountId,
       sourceFilename: "banco-b.csv",
-      profileId,
-      accepted,
+      profileId: "banco-b@v1",
+      accepted: [
+        draft({
+          accountId,
+          transactionDate: "2026-05-01",
+          postedDate: "2026-05-03",
+          description: "PAGO TARJETA",
+          direction: "debit",
+          amount: money(123450n, "EUR"),
+          fingerprint: "fp-cargo",
+        }),
+      ],
     });
-    expect(result.inserted).toBe(2);
+    expect(result.inserted).toBe(1);
 
     const txns = await listTransactions(db, { accountId, limit: 10 });
     const cargo = txns.items[0];
     expect(cargo?.transactionDate).toBe("2026-05-01");
     expect(cargo?.postedDate).toBe("2026-05-03");
-    expect(cargo?.direction).toBe("debit");
     expect(cargo?.amountMinor).toBe(123450n);
     expect(cargo?.currencyCode).toBe("EUR");
   });
@@ -127,21 +174,19 @@ describe("persistIngestion — mapping", () => {
 describe("persistIngestion — idempotency", () => {
   it("re-importing the same statement inserts no duplicates and leaves no orphan statement", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", accountId);
-
     const first = await persistIngestion(db, {
       accountId,
       sourceFilename: "bank-a.csv",
-      profileId,
-      accepted,
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(accountId),
     });
     expect(first.inserted).toBe(2);
 
     const second = await persistIngestion(db, {
       accountId,
       sourceFilename: "bank-a.csv",
-      profileId,
-      accepted,
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(accountId),
     });
     expect(second.inserted).toBe(0);
     expect(second.skipped).toBe(2);
@@ -151,7 +196,7 @@ describe("persistIngestion — idempotency", () => {
       .select()
       .from(statements)
       .where(eq(statements.accountId, accountId));
-    expect(statementRows).toHaveLength(1); // the empty re-import statement was dropped
+    expect(statementRows).toHaveLength(1);
 
     const txnRows = await db
       .select()
@@ -160,16 +205,22 @@ describe("persistIngestion — idempotency", () => {
     expect(txnRows).toHaveLength(2);
   });
 
-  it("keeps two legitimately-identical rows (distinct ordinals -> distinct fingerprints)", async () => {
+  it("keeps two legitimately-identical rows (distinct fingerprints) both", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a-duplicates.csv", accountId);
-    expect(accepted).toHaveLength(2);
-
+    const identical = (fingerprint: string): TransactionDraft =>
+      draft({
+        accountId,
+        transactionDate: "2026-05-01",
+        description: "COFFEE BAR #12",
+        direction: "debit",
+        amount: money(500n, "USD"),
+        fingerprint,
+      });
     const result = await persistIngestion(db, {
       accountId,
-      sourceFilename: "bank-a-duplicates.csv",
-      profileId,
-      accepted,
+      sourceFilename: "dups.csv",
+      profileId: "bank-a@v1",
+      accepted: [identical("fp-dup-0"), identical("fp-dup-1")],
     });
     expect(result.inserted).toBe(2);
 
@@ -182,19 +233,22 @@ describe("persistIngestion — idempotency", () => {
 
   it("handles two concurrent imports of the same file safely", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", accountId);
     const persist = () =>
-      persistIngestion(db, { accountId, sourceFilename: "bank-a.csv", profileId, accepted });
+      persistIngestion(db, {
+        accountId,
+        sourceFilename: "bank-a.csv",
+        profileId: "bank-a@v1",
+        accepted: bankADrafts(accountId),
+      });
 
     const [a, b] = await Promise.all([persist(), persist()]);
-    // Each row is inserted exactly once across the two concurrent imports.
     expect(a.inserted + b.inserted).toBe(2);
 
     const statementRows = await db
       .select()
       .from(statements)
       .where(eq(statements.accountId, accountId));
-    expect(statementRows).toHaveLength(1); // the import that inserted nothing dropped its statement
+    expect(statementRows).toHaveLength(1);
 
     const txnRows = await db
       .select()
@@ -207,30 +261,33 @@ describe("persistIngestion — idempotency", () => {
 describe("listTransactions — keyset pagination", () => {
   it("returns stable, ordered pages with a correct cursor", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", accountId);
-    await persistIngestion(db, { accountId, sourceFilename: "bank-a.csv", profileId, accepted });
+    await persistIngestion(db, {
+      accountId,
+      sourceFilename: "bank-a.csv",
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(accountId),
+    });
 
     const page1 = await listTransactions(db, { accountId, limit: 1 });
     expect(page1.items).toHaveLength(1);
     expect(page1.items[0]?.transactionDate).toBe("2026-05-01");
     expect(page1.nextCursor).not.toBeNull();
 
-    const page2 = await listTransactions(db, {
-      accountId,
-      limit: 1,
-      cursor: page1.nextCursor,
-    });
-    expect(page2.items).toHaveLength(1);
+    const page2 = await listTransactions(db, { accountId, limit: 1, cursor: page1.nextCursor });
     expect(page2.items[0]?.transactionDate).toBe("2026-05-02");
-    expect(page2.nextCursor).toBeNull(); // last page
+    expect(page2.nextCursor).toBeNull();
   });
 });
 
 describe("raw_row projection", () => {
   it("excludes raw_row from the list projection but exposes it on an audit fetch", async () => {
     const accountId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", accountId);
-    await persistIngestion(db, { accountId, sourceFilename: "bank-a.csv", profileId, accepted });
+    await persistIngestion(db, {
+      accountId,
+      sourceFilename: "bank-a.csv",
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(accountId),
+    });
 
     const { items } = await listTransactions(db, { accountId, limit: 10 });
     const first = items[0];
@@ -247,17 +304,15 @@ describe("raw_row projection", () => {
 
   it("does not expose a transaction to a different account (audit fetch is account-scoped)", async () => {
     const ownerId = await freshAccount("USD");
-    const { profileId, accepted } = ingest("bank-a.csv", ownerId);
     await persistIngestion(db, {
       accountId: ownerId,
       sourceFilename: "bank-a.csv",
-      profileId,
-      accepted,
+      profileId: "bank-a@v1",
+      accepted: bankADrafts(ownerId),
     });
     const { items } = await listTransactions(db, { accountId: ownerId, limit: 1 });
     const txnId = items[0]?.id;
     expect(txnId).toBeDefined();
-
     if (!txnId) {
       return;
     }

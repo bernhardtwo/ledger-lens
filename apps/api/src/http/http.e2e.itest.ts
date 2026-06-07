@@ -2,16 +2,20 @@ import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  type Database,
+  type DatabaseConnection,
+  accounts,
+  applyMigrations,
+  createDatabase,
+  seedAccounts,
+} from "@ledger-lens/db";
 import type { CurrencyCode } from "@ledger-lens/shared";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Database, type DatabaseConnection, createDatabase } from "../db/client.js";
-import { applyMigrations } from "../db/migrate.js";
-import { accounts } from "../db/schema.js";
-import { seedAccounts } from "../db/seed.js";
 import { AppModule } from "./app.module.js";
 import { DATABASE } from "./database/database.tokens.js";
 

@@ -8,7 +8,7 @@ import { defineConfig } from "drizzle-kit";
  * programmatically against a disposable container (see `migrate.ts`).
  */
 export default defineConfig({
-  schema: "./src/db/schema.ts",
+  schema: "./src/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {

@@ -4,17 +4,17 @@
  * core over the injected client, persists the assignments, and reports counts. No
  * batching/validation/money logic of its own — that all lives in the pure core.
  */
+import {
+  type CategoryAssignment,
+  type Database,
+  applyCategorizations,
+  getAccountById,
+  listUncategorizedTransactions,
+} from "@ledger-lens/db";
 import { UNCATEGORIZED } from "@ledger-lens/shared";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { categorizeTransactions } from "../../categorization/core.js";
 import type { CategorizationClient } from "../../categorization/types.js";
-import { getAccountById } from "../../db/accounts.repository.js";
-import {
-  type CategoryAssignment,
-  applyCategorizations,
-  listUncategorizedTransactions,
-} from "../../db/categorization.repository.js";
-import type { Database } from "../../db/client.js";
 import { DATABASE } from "../database/database.tokens.js";
 import type { CategorizeResponse } from "./categorization.dto.js";
 import { CATEGORIZATION_CLIENT } from "./categorization.tokens.js";

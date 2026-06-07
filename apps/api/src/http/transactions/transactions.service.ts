@@ -3,10 +3,8 @@
  * `listTransactions` repository (keyset pagination, `raw_row` excluded) and maps
  * each row to the canonical DTO. No query/money logic of its own.
  */
+import { type Database, getAccountById, listTransactions } from "@ledger-lens/db";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { getAccountById } from "../../db/accounts.repository.js";
-import type { Database } from "../../db/client.js";
-import { listTransactions } from "../../db/repository.js";
 import { DATABASE } from "../database/database.tokens.js";
 import {
   type ListQuery,

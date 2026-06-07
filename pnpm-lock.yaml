@@ -35,6 +35,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.69.0
         version: 0.69.0(zod@3.25.76)
+      '@ledger-lens/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@ledger-lens/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -50,12 +53,6 @@ importers:
       csv-parse:
         specifier: ^5.5.6
         version: 5.6.0
-      drizzle-orm:
-        specifier: ^0.36.4
-        version: 0.36.4(postgres@3.4.9)
-      postgres:
-        specifier: ^3.4.5
-        version: 3.4.9
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -84,9 +81,6 @@ importers:
       '@types/supertest':
         specifier: ^6.0.2
         version: 6.0.3
-      drizzle-kit:
-        specifier: ^0.28.1
-        version: 0.28.1
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
@@ -98,6 +92,37 @@ importers:
         version: 4.22.4
 
   apps/web: {}
+
+  packages/db:
+    dependencies:
+      '@ledger-lens/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.36.4
+        version: 0.36.4(postgres@3.4.9)
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: ^10.16.0
+        version: 10.28.0
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.20
+      drizzle-kit:
+        specifier: ^0.28.1
+        version: 0.28.1
+      testcontainers:
+        specifier: ^10.16.0
+        version: 10.28.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
 
   packages/evals: {}
 

@@ -1,6 +1,6 @@
+import type { TransactionListRow } from "@ledger-lens/db";
 import { CategorySchema, TransactionListItemSchema, money, toMoneyDTO } from "@ledger-lens/shared";
 import { z } from "zod";
-import type { TransactionListRow } from "../../db/repository.js";
 
 /** List item enriched with its category (Phase 2): `null` until categorized. */
 export const TransactionListItemResponseSchema = TransactionListItemSchema.extend({

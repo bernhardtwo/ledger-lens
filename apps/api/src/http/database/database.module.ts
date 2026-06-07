@@ -1,11 +1,11 @@
-import { Module } from "@nestjs/common";
 /**
  * Provides the Drizzle database handle (token {@link DATABASE}) from
  * `DATABASE_URL` (server-side only). Integration/e2e tests override the token with
  * a handle bound to a disposable Postgres container, so this factory never runs
  * there.
  */
-import { type Database, createDatabase } from "../../db/client.js";
+import { type Database, createDatabase } from "@ledger-lens/db";
+import { Module } from "@nestjs/common";
 import { DATABASE } from "./database.tokens.js";
 
 function databaseUrl(): string {

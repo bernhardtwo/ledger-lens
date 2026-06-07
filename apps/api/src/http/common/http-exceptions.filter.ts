@@ -1,3 +1,4 @@
+import { InvalidCursorError } from "@ledger-lens/db";
 /**
  * Global exception filter (see spec 0001, "HTTP error mapping").
  *
@@ -20,7 +21,6 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { InvalidCursorError } from "../../db/repository.js";
 import { IngestionError, type IngestionErrorKind } from "../../ingestion/index.js";
 
 const INGESTION_STATUS: Record<IngestionErrorKind, number> = {

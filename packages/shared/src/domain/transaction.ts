@@ -108,6 +108,14 @@ export interface Transaction {
 /** List/default projection of a `Transaction`: everything except `rawRow`. */
 export type TransactionListItem = Omit<Transaction, "rawRow">;
 
+/**
+ * A transaction ready to persist: a `Transaction` without the server-assigned
+ * `id`/`statementId`. The in-memory counterpart of `TransactionDraftDTO` (`amount`
+ * is a `Money` value object here). Produced by the ingestion core and consumed by
+ * the persistence layer (`@ledger-lens/db`).
+ */
+export type TransactionDraft = Omit<Transaction, "id" | "statementId">;
+
 /** Serialize a `Transaction` to its full JSON-safe DTO (includes `rawRow`). */
 export function toTransactionDTO(transaction: Transaction): TransactionDTO {
   return {

@@ -1,7 +1,7 @@
 /**
  * Migration runner (see spec 0001). Applies the drizzle-kit-generated SQL in
- * `apps/api/drizzle/` to a database. Used both by the integration tests (against a
- * disposable Postgres) and by the `db:migrate` dev script.
+ * `packages/db/drizzle/` to a database. Used both by the integration tests (against
+ * a disposable Postgres) and by the `db:migrate` dev script.
  */
 import { dirname, resolve } from "node:path";
 import { argv } from "node:process";
@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { type Database, createDatabase } from "./client.js";
 
-/** Folder holding the generated migration SQL (`apps/api/drizzle`). */
-const MIGRATIONS_FOLDER = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
+/** Folder holding the generated migration SQL (`packages/db/drizzle`). */
+const MIGRATIONS_FOLDER = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
 
 /** Apply all pending migrations to the given database. */
 export async function applyMigrations(db: Database): Promise<void> {

@@ -1,3 +1,4 @@
+import { type Database, getAccountById, persistIngestion } from "@ledger-lens/db";
 /**
  * Statements service — the thin orchestration edge: it 404s an unknown account,
  * then runs the EXISTING deterministic ingestion core and persistence repository.
@@ -9,9 +10,6 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { getAccountById } from "../../db/accounts.repository.js";
-import type { Database } from "../../db/client.js";
-import { persistIngestion } from "../../db/repository.js";
 import { ingestCsv } from "../../ingestion/index.js";
 import { DATABASE } from "../database/database.tokens.js";
 import type { StatementIngestResponse } from "./statements.dto.js";
