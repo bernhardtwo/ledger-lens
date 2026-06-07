@@ -30,3 +30,4 @@ coverage/
 
 # claude
 .claude/agent-memory/
+.claude/settings.local.json
