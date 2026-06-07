@@ -20,6 +20,7 @@ export interface FeatureBoundary {
 export * from "./domain/currency.js";
 export * from "./domain/money.js";
 export * from "./domain/iso-date.js";
+export * from "./domain/text.js";
 export * from "./domain/account.js";
 export * from "./domain/statement.js";
 export * from "./domain/transaction.js";

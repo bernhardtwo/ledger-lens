@@ -32,6 +32,19 @@ describe("Statement parsing", () => {
     );
   });
 
+  it("rejects sub-millisecond precision and a non-UTC offset (server emits ms UTC)", () => {
+    // precision: 3 — more than millisecond precision is not what the server emits.
+    expect(
+      StatementSchema.safeParse({ ...VALID_DTO, ingestedAt: "2026-06-03T12:34:56.123456Z" })
+        .success,
+    ).toBe(false);
+    // offset: false — a local offset is rejected; only UTC `Z` is accepted.
+    expect(
+      StatementSchema.safeParse({ ...VALID_DTO, ingestedAt: "2026-06-03T12:34:56.000+02:00" })
+        .success,
+    ).toBe(false);
+  });
+
   it("rejects negative or fractional row counts and bad uuids", () => {
     expect(StatementSchema.safeParse({ ...VALID_DTO, rowCount: -1 }).success).toBe(false);
     expect(StatementSchema.safeParse({ ...VALID_DTO, rowCount: 1.5 }).success).toBe(false);

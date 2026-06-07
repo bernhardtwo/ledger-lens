@@ -19,7 +19,12 @@ export const StatementSchema = z.object({
   profileId: z.string().min(1),
   rowCount: z.number().int().nonnegative(),
   // An instant: ISO-8601 with offset/Z at the boundary, a `Date` in the domain.
-  ingestedAt: z.string().datetime(),
+  // Boundary decision: `ingestedAt` is server-generated, so we pin its shape to
+  // exactly what we emit — `Date.toISOString()`: UTC `Z` (offset: false rejects
+  // a non-UTC offset) with millisecond precision (precision: 3 rejects sub-ms).
+  // This keeps the wire form canonical and round-trip-stable, never a client's
+  // arbitrary-precision or local-offset timestamp.
+  ingestedAt: z.string().datetime({ offset: false, precision: 3 }),
 });
 
 /** The serialized form of a `Statement` (see `StatementSchema`). */

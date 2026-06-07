@@ -27,7 +27,7 @@
  */
 import { z } from "zod";
 import { type IsoDate, IsoDateSchema } from "./iso-date.js";
-import { type Money, MoneySchema, parseMoney, toMoneyDTO } from "./money.js";
+import { type Money, MoneySchema, money, toMoneyDTO } from "./money.js";
 
 /** Direction of value flow. `"debit"` = money out of the account; `"credit"` = in. */
 export const DirectionSchema = z.enum(["debit", "credit"]);
@@ -142,6 +142,11 @@ export function toTransactionListItemDTO(transaction: Transaction): TransactionL
 /** Validate and deserialize an unknown input into a `Transaction` at a boundary. */
 export function parseTransaction(input: unknown): Transaction {
   const dto = TransactionSchema.parse(input);
+  // `dto.amount` is already a validated `MoneyDTO` (TransactionSchema embeds
+  // MoneySchema, regex + registry cross-check included). Construct the value
+  // object directly instead of re-running `parseMoney` — one validation pass,
+  // not two. `money()` re-derives the exponent from the registry, the source of
+  // truth, so the wire-provided exponent is never trusted here either.
   return {
     id: dto.id,
     accountId: dto.accountId,
@@ -150,7 +155,7 @@ export function parseTransaction(input: unknown): Transaction {
     postedDate: dto.postedDate,
     description: dto.description,
     direction: dto.direction,
-    amount: parseMoney(dto.amount),
+    amount: money(BigInt(dto.amount.amount), dto.amount.currency),
     fingerprint: dto.fingerprint,
     rawRow: dto.rawRow,
   };
