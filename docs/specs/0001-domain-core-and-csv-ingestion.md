@@ -75,18 +75,33 @@ export const MoneySchema = z.object({
 // transaction.ts
 export const DirectionSchema = z.enum(["debit", "credit"]); // debit = money out
 export const TransactionSchema = z.object({
-  id: z.string().uuid(),                  // assigned at persist
+  id: z.string().uuid(),                       // assigned at persist
   accountId: z.string().uuid(),
   statementId: z.string().uuid(),
-  postedAt: z.string().date(),            // ISO yyyy-mm-dd (value date)
-  description: z.string().min(1),
+  transactionDate: IsoDateSchema,              // canonical: when the txn occurred
+  postedDate: IsoDateSchema.nullable(),        // bank posting/value date; null when absent
+  description: z.string().min(1),              // canonicalized via normalizeDescription
   direction: DirectionSchema,
-  amount: MoneySchema,                    // non-negative magnitude; sign lives in direction
-  fingerprint: z.string(),                // dedupe key (see ingestion)
-  raw: z.record(z.string(), z.string()), // original CSV row, for audit/replay
+  amount: MoneySchema,                         // non-negative magnitude; sign lives in direction
+  fingerprint: z.string().min(1),              // dedupe key (see ingestion)
+  rawRow: z.record(z.string(), z.string()),    // original CSV row, for audit/replay
 });
-export type Transaction = z.infer<typeof TransactionSchema>;
+export type TransactionDTO = z.infer<typeof TransactionSchema>;
 ```
+
+**Dual dates (resolves Open Question 3).** We store **both** dates:
+`transactionDate` is the canonical date (drives ordering, dedupe and
+reconciliation) and is required; `postedDate` is the bank's posting/value date,
+kept when the source provides one and `null` otherwise. Both are calendar dates
+(`IsoDateSchema`, `YYYY-MM-DD`), never instants — see `iso-date.ts`.
+
+**`rawRow` is audit-only.** The original CSV row is retained for replay/audit but
+is **excluded from the default/list projection** the API returns:
+`TransactionListItemSchema = TransactionSchema.omit({ rawRow: true })`. Listings
+stay lean and never leak the raw source shape; `rawRow` is exposed only on an
+explicit single-transaction/audit fetch. `description` is the output of the
+canonical `normalizeDescription` (see Testing/ingestion), the *same* normalizer
+that feeds the fingerprint, so the stored text and the dedupe key never diverge.
 
 `Account` (`id`, `name`, `institution`, `currency`, `kind: "bank" | "credit"`) and
 `Statement` (`id`, `accountId`, `sourceFilename`, `profileId`, `ingestedAt`,
@@ -125,10 +140,21 @@ bytes → [1 sniff dialect] → [2 select profile] → [3 map+normalize rows]
    fatal: the response reports `accepted` and `rejected[]` (row index + reason).
    Threshold: if `rejected/total > 0.5`, fail the whole ingest (`422`) — likely a
    wrong profile.
-5. **Fingerprint + idempotency.** `fingerprint = sha256(accountId | postedAt |
-   amountMinor | direction | normalize(description))`. A DB unique index on
-   `(account_id, fingerprint)` makes re-uploading the same statement idempotent;
-   duplicate rows are reported as `skipped`, not errors.
+5. **Fingerprint + idempotency.** `fingerprint = sha256(accountId |
+   transactionDate | amountMinor | direction | normalizeDescription(description) |
+   occurrenceOrdinal)`. Two decisions are encoded here:
+   - **Re-importing the same statement does NOT duplicate.** The fingerprint
+     excludes `statementId` (a re-import gets a fresh statement id), and the same
+     bytes reproduce the same rows in the same order — so a re-upload yields
+     identical fingerprints and the unique `(account_id, fingerprint)` index skips
+     them. Duplicates are reported as `skipped`, not errors.
+   - **Legitimately-identical rows are NOT collapsed.** Two genuine same-content
+     rows in one file (e.g. two $5 coffees on the same day) must both survive, so
+     the fingerprint includes a **per-row occurrence ordinal** — the k-th row
+     sharing that exact content tuple — giving distinct same-content rows distinct
+     keys. The description component is the canonical `normalizeDescription` (the
+     single normalizer also applied to the stored `description`, so the two can
+     never disagree); it is idempotent, keeping the key stable across re-imports.
 6. **Persist** transactions + a `Statement` row in one transaction (see below).
 
 Error handling is structured: a typed `IngestionError` discriminated union
@@ -150,9 +176,11 @@ statements(id uuid pk, account_id uuid fk, source_filename text,
            profile_id text, row_count int, ingested_at timestamptz)
 transactions(
   id uuid pk default, account_id uuid fk, statement_id uuid fk,
-  posted_at date, description text, direction text,        // "debit"|"credit"
+  transaction_date date not null,                          // canonical date
+  posted_date date,                                        // bank posting date; nullable
+  description text, direction text,                        // "debit"|"credit"
   amount_minor bigint, currency_code char(3),              // exponent from registry
-  fingerprint text, raw jsonb,
+  fingerprint text, raw_row jsonb,                         // raw_row excluded from list projection
   unique(account_id, fingerprint)                          // idempotency
 )
 ```
@@ -227,8 +255,10 @@ boundary). All shared schemas imported from `@ledger-lens/shared`.
 2. **Multi-currency statements.** Profiles assume one currency per file. Do any
    target synthetic statements mix currencies per row? If so, currency must move
    from profile to per-row parsing.
-3. **Date semantics.** We persist a single `postedAt`. Some statements separate
-   transaction date vs. value/posting date — do we need both for reconciliation?
-   Defer until reconciliation phase defines the need.
+3. **Date semantics. — RESOLVED.** Store **both**: `transactionDate` is canonical
+   (required; drives ordering, dedupe and reconciliation) and `postedDate` is the
+   bank's posting/value date (optional, `null` when the source omits it). This
+   avoids a later migration if reconciliation needs the posting date, at the cost
+   of one nullable calendar-date column. See the domain model section above.
 4. **`raw` storage cost.** Keeping the full original row as `jsonb` aids
    audit/replay but bloats the table. Keep for now; revisit if it matters.

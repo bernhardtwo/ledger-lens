@@ -67,6 +67,12 @@ export const MoneySchema = z.object({
 });
 ```
 
+> **Note (as shipped):** the implemented `MoneySchema` validates
+> `minorUnitExponent` against the ISO-4217 registry via `superRefine` (it must
+> equal `minorUnitExponentOf(currency)`), which is stronger than the illustrative
+> `.min(0).max(4)` bound sketched above — a DTO can never disagree with its own
+> currency.
+
 **7. Storage.** In Postgres the amount column is `bigint` (minor units) alongside
 a `currency` text column constrained to ISO-4217. Display formatting (inserting
 the decimal point, locale, symbol) happens only at the presentation edge.
