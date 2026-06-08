@@ -85,7 +85,8 @@ return it.
 - **`apps/api/src/agent/`** (SDK-coupled only in the adapter):
   - `types.ts` — the `QaAgent` port (`ask({accountId, question}) → { answer,
     toolCalls }`), `QaAnswer`, `ToolCall`, `AgentConfig`, `AgentExecutionError`.
-  - `scope.ts` — `assertInScope(scopedId, tool, input)` (pure) + tool-name
+  - `scope.ts` — `resolveToolCall(scopedId, tool, input)` (pure; whitelist + inject
+    the scoped accountId) + tool-name
     constants and the `mcp__ledgerlens__` prefix/strip helpers.
   - `prompt.ts` — `buildSystemPrompt(accountId)`.
   - `query.ts` — `buildAskOptions` / `extractAnswer` / `extractToolCalls` (pure)
@@ -104,11 +105,13 @@ itself is smoke-only.
 ## Testing strategy (NO real API in any suite)
 
 - **Unit (`*.test.ts`, no DB, no API, under `pnpm check`):**
-  - `assertInScope` — in-scope allowed; foreign `accountId` denied; `list_accounts`
-    denied.
+  - `resolveToolCall` — allows the 4 tools, injecting the scoped `accountId`
+    (`updatedInput`); a foreign or omitted `accountId` is overwritten;
+    `list_accounts`/unknown denied.
   - `buildAskOptions` — `disallowedTools` hides `list_accounts`; `mcpServers.env`
     carries `DATABASE_URL`; model/maxTurns/maxBudgetUsd from config; system prompt
-    contains `:accountId`; prompt is the question.
+    contains `:accountId`; and `canUseTool`'s allow result carries `updatedInput`
+    (the offline proxy for the SDK's smoke-only permission-result validation).
   - `extractAnswer` / `extractToolCalls` — over synthetic `SDKMessage` arrays:
     success → answer + turns + stripped tool calls; `error_max_turns` /
     `error_max_budget_usd` → `STEP_LIMIT_MESSAGE`; `error_during_execution` →
@@ -118,10 +121,11 @@ itself is smoke-only.
   bound to a **real MCP client over stdio** to `packages/mcp-server` against the
   container). The scripted brain's phrasing is a pure function of the **real** tool
   results. Cases: a real full-loop answer (asserts a number that came through the
-  real tool + DB + Money fold); **account scoping** (a decision targeting another
-  account / `list_accounts` is denied — never reaches the DB, absent from
-  `toolCalls`); unknown account → `404`; no-answer path → `200`; tool-call cap →
-  graceful `200`.
+  real tool + DB + Money fold); **scope injection** (a decision passing a *foreign*
+  or *omitted* `accountId` still runs against the scoped account — asserts the
+  scoped account's number, not the other account's, the exact gap the smoke
+  caught); `list_accounts` denied; unknown account → `404`; no-answer path → `200`;
+  tool-call cap → graceful `200`.
 - **Smoke (`smoke:ask`, manual, real API + real Agent SDK + real MCP + seeded
   data):** the only real-API path; excluded from CI.
 

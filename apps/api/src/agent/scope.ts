@@ -4,8 +4,12 @@
  * into the Agent SDK's `canUseTool` callback; the scripted test double calls it on
  * the same path. Pure and exhaustively unit-tested.
  *
- * `allowedTools` is deliberately not used to scope: the SDK defines it as a
- * no-prompt list, not a restriction, so it cannot be the boundary. This is.
+ * Scoping works by **injection, not rejection**: an allowed call's `accountId` is
+ * overwritten with the scoped one (via `canUseTool`'s `updatedInput`), so the
+ * model's `accountId` value can never matter — it cannot target another account
+ * even by passing a different id. `list_accounts` and any built-in/unknown tool
+ * are denied outright. (`allowedTools` is deliberately not used to scope: the SDK
+ * defines it as a no-prompt list, not a restriction, so it cannot be the boundary.)
  */
 
 /** Our MCP server's name and the tool-name prefix the Agent SDK assigns it. */
@@ -34,17 +38,19 @@ export function prefixed(domainTool: string): string {
 }
 
 export type ScopeDecision =
-  | { readonly allowed: true }
+  /** Allowed — run the tool with `updatedInput` (the scoped `accountId` injected). */
+  | { readonly allowed: true; readonly updatedInput: Record<string, unknown> }
   | { readonly allowed: false; readonly reason: string };
 
 /**
- * Decide whether a tool call is in scope for `scopedAccountId`. Allows only the
- * four account-scoped tools, and only when the call's `accountId` equals the
- * scoped one. Everything else — `list_accounts`, any built-in/unknown tool, a
- * foreign or missing `accountId` — is denied. No foreign-account read reaches the
- * DB.
+ * Resolve a tool call for `scopedAccountId`. Allows only the four account-scoped
+ * tools and, when allowed, returns `updatedInput` with the scoped `accountId`
+ * forced in — so whatever id the model passed (a different account, a garbled
+ * UUID, or none) is overwritten and the call can only ever touch the scoped
+ * account. `list_accounts` and any built-in/unknown tool are denied. The denial
+ * `reason` is surfaced to the model so it can adjust.
  */
-export function assertInScope(
+export function resolveToolCall(
   scopedAccountId: string,
   toolName: string,
   input: Record<string, unknown>,
@@ -56,11 +62,5 @@ export function assertInScope(
       reason: `tool '${tool}' is not permitted for a single-account question`,
     };
   }
-  if (input.accountId !== scopedAccountId) {
-    return {
-      allowed: false,
-      reason: `this question is scoped to account ${scopedAccountId}; tool calls may not access another account`,
-    };
-  }
-  return { allowed: true };
+  return { allowed: true, updatedInput: { ...input, accountId: scopedAccountId } };
 }

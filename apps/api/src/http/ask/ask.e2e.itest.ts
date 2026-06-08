@@ -35,7 +35,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { mcpServerLaunch } from "../../agent/mcp-launch.js";
 import { STEP_LIMIT_MESSAGE } from "../../agent/query.js";
-import { assertInScope, stripPrefix } from "../../agent/scope.js";
+import { resolveToolCall, stripPrefix } from "../../agent/scope.js";
 import type { QaAgent, QaAnswer, ToolCall } from "../../agent/types.js";
 import { AppModule } from "../app.module.js";
 import { DATABASE } from "../database/database.tokens.js";
@@ -48,8 +48,13 @@ interface Decision {
 
 /**
  * Test double of the `QaAgent` port: canned decisions, but the tools execute for
- * real over the MCP protocol. The `assertInScope` guard is the SAME one the
- * production adapter wires into `canUseTool`, so a denied call never reaches the DB.
+ * real over the MCP protocol. It mirrors production by routing each decision
+ * through `resolveToolCall` — the SAME guard the adapter wires into `canUseTool` —
+ * and calling the tool with the returned `updatedInput` (the scoped accountId
+ * injected). So a denied call never reaches the DB, and a mis-passed accountId is
+ * overwritten before the tool runs. (The SDK's own runtime validation of the
+ * permission result is exercised only by the smoke; here we exercise the guard +
+ * injection + the real tool/DB.)
  */
 class ScriptedQaAgent implements QaAgent {
   decisions: Decision[] = [];
@@ -72,12 +77,17 @@ class ScriptedQaAgent implements QaAgent {
           turns: toolCalls.length,
         };
       }
-      if (!assertInScope(accountId, decision.tool, decision.input).allowed) {
-        continue; // denied -> never reaches the MCP server / DB
+      const scope = resolveToolCall(accountId, decision.tool, decision.input);
+      if (!scope.allowed) {
+        continue; // denied (list_accounts / unknown) -> never reaches the MCP server / DB
       }
-      const res = await this.client.callTool({ name: decision.tool, arguments: decision.input });
+      // Run with the INJECTED input (scoped accountId forced in), as production does.
+      const res = await this.client.callTool({
+        name: decision.tool,
+        arguments: scope.updatedInput,
+      });
       results.push((res as { structuredContent?: unknown }).structuredContent);
-      toolCalls.push({ tool: stripPrefix(decision.tool), input: decision.input });
+      toolCalls.push({ tool: stripPrefix(decision.tool), input: scope.updatedInput });
     }
     return { answer: this.phrase(results), toolCalls, model: "scripted", turns: toolCalls.length };
   }
@@ -235,17 +245,32 @@ describe("POST /accounts/:accountId/ask", () => {
     expect(res.body.meta).toEqual({ model: "scripted", turns: 1 });
   });
 
-  it("never reaches another account, even if the agent tries", async () => {
+  // Regression for the smoke-caught bug: the agent mis-passing/omitting accountId
+  // must NOT escape scope. Injection overwrites it, so the tool runs against the
+  // scoped account regardless. The other account really has net credit 999999, so
+  // asserting 243000 proves the foreign id was overridden (not just "denied").
+  it("redirects a foreign or omitted accountId to the scoped account (injection)", async () => {
+    const netPhrase = (results: unknown[]) => {
+      const net = (results[0] as { net: { direction: string; amount: { amount: string } } }).net;
+      return `net is ${net.direction} ${net.amount.amount}`;
+    };
+
+    // The agent asks for ANOTHER account (whose real net is credit 999999)...
     scripted.decisions = [{ tool: "summarize_account", input: { accountId: otherAccountId } }];
-    scripted.phrase = (results) => `calls=${results.length}`;
-
-    const res = await http()
+    scripted.phrase = netPhrase;
+    let res = await http()
       .post(`/accounts/${accountId}/ask`)
-      .send({ question: "what about the other account?" });
-
+      .send({ question: "summarize the other account" });
     expect(res.status).toBe(200);
-    expect(res.body.toolCalls).toEqual([]); // the foreign-account call was denied, never ran
-    expect(res.body.answer).toBe("calls=0");
+    expect(res.body.answer).toBe("net is credit 243000"); // ...but it got THIS account
+    expect(res.body.toolCalls).toEqual([{ tool: "summarize_account", input: { accountId } }]);
+
+    // Same when the agent omits accountId entirely — injection supplies it.
+    scripted.decisions = [{ tool: "summarize_account", input: {} }];
+    scripted.phrase = netPhrase;
+    res = await http().post(`/accounts/${accountId}/ask`).send({ question: "what's my net?" });
+    expect(res.body.answer).toBe("net is credit 243000");
+    expect(res.body.toolCalls).toEqual([{ tool: "summarize_account", input: { accountId } }]);
   });
 
   it("denies list_accounts", async () => {

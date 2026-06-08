@@ -6,7 +6,7 @@
 import type { Options, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { McpLaunch } from "./mcp-launch.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { LIST_ACCOUNTS, MCP_SERVER_NAME, assertInScope, prefixed, stripPrefix } from "./scope.js";
+import { LIST_ACCOUNTS, MCP_SERVER_NAME, prefixed, resolveToolCall, stripPrefix } from "./scope.js";
 import { AgentExecutionError, type ToolCall } from "./types.js";
 
 /** Graceful 200 message when the agent hits the turn/budget limit (ADR-0008 §7). */
@@ -52,10 +52,24 @@ export function buildAskOptions(config: AgentConfig, accountId: string): Options
     // Ignore any ambient MCP config (project .mcp.json, settings, plugins).
     strictMcpConfig: true,
     canUseTool: async (toolName, input) => {
-      const decision = assertInScope(accountId, toolName, input);
-      return decision.allowed
-        ? { behavior: "allow" }
-        : { behavior: "deny", message: decision.reason };
+      const decision = resolveToolCall(accountId, toolName, input);
+      if (!decision.allowed) {
+        return { behavior: "deny", message: decision.reason };
+      }
+      // Observability (no behavior change): note when the model passed an
+      // accountId we had to override — a useful Phase 5 signal that Haiku is
+      // mis-passing the id. The injection below makes the value irrelevant.
+      const passed = (input as { accountId?: unknown }).accountId;
+      if (passed !== undefined && passed !== accountId) {
+        console.warn(
+          `[qa-agent] ${stripPrefix(toolName)}: overriding model accountId ${JSON.stringify(passed)} with scoped ${accountId}`,
+        );
+      }
+      // The allow arm MUST carry `updatedInput` — the SDK's runtime validation of
+      // the permission result requires it (the .d.ts types it optional, but the
+      // 0.3.x runtime rejects an allow without it). updatedInput also forces the
+      // scoped accountId, so scoping is by construction.
+      return { behavior: "allow", updatedInput: decision.updatedInput };
     },
     mcpServers: {
       [MCP_SERVER_NAME]: {

@@ -58,17 +58,24 @@ missing at call time (mirroring the Phase 2 lazy-SDK pattern).
 /accounts/:accountId/ask { question }` answers about **that account only**. Three
 layers, the first of which is the hard guarantee:
 
-- **`canUseTool` deterministic guard (authoritative).** The SDK permission
-  callback denies any tool call whose `input.accountId !== :accountId`, and denies
-  `list_accounts` outright. It delegates to a pure `assertInScope(scopedId, tool,
-  input)` function. `allowedTools` is deliberately **not** used to enforce scope —
-  the docs define it as a no-prompt list, not a restriction, so it cannot be the
-  boundary; `canUseTool` is. No tool call with a foreign `accountId` can reach the
-  DB.
+- **`canUseTool` deterministic guard (authoritative), by injection not rejection.**
+  The SDK permission callback delegates to a pure `resolveToolCall(scopedId, tool,
+  input)`: it denies `list_accounts` and any built-in/unknown tool outright, and
+  for the four account-scoped tools returns `{ behavior: "allow", updatedInput: {
+  ...input, accountId: scopedId } }` — **overwriting** whatever `accountId` the
+  model passed (a different account, a garbled UUID, or none). So the model's
+  `accountId` value can never matter; a tool call can only ever touch the scoped
+  account. (Injection is strictly safer than reject-on-mismatch, and it is also
+  *required* by the SDK: in `@anthropic-ai/claude-agent-sdk@0.3.x` the allow arm's
+  runtime schema requires `updatedInput`, though the `.d.ts` types it optional —
+  returning a bare `{ behavior: "allow" }` fails permission validation and the tool
+  never runs.) `allowedTools` is deliberately **not** used to enforce scope — the
+  docs define it as a no-prompt list, not a restriction, so it cannot be the
+  boundary; `canUseTool` is.
 - **`disallowedTools: ["mcp__ledgerlens__list_accounts"]`** hides the one
   cross-account tool from the model entirely.
-- **Prompt injection** states the agent answers about `:accountId` only and must
-  pass it to every tool.
+- **Prompt injection** states the agent answers about `:accountId` only and to pass
+  it to every tool (belt-and-suspenders — the value is overwritten regardless).
 
 A deterministic `getAccountById` **404 pre-check** runs before any tokens are
 spent on an unknown account.
@@ -110,20 +117,22 @@ model cannot be mocked inside `query()`, the seam is a **`QaAgent` port**
 (symbol-token DI, like the Phase 2 client). Its logic is extracted into **pure,
 unit-tested helpers** so only the live network call is offline-untestable:
 `buildAskOptions(config, accountId, question)`, `extractAnswer(messages)`,
-`extractToolCalls(messages)`, and `assertInScope(...)`. The production adapter
+`extractToolCalls(messages)`, and `resolveToolCall(...)`. The production adapter
 `AgentSdkQaAgent` is a thin wrapper that calls `query()` and these helpers.
 
 **9. Tests use a scripted port + the real MCP protocol; no real API anywhere.**
 - **Full-loop integration:** a `ScriptedQaAgent` (test double of the port) drives
   **canned decisions** through a **real `@modelcontextprotocol/sdk` client → the
   real `packages/mcp-server` over stdio → real tools → testcontainers Postgres**,
-  reusing `assertInScope` and the cap. So `endpoint → service → scripted brain →
-  REAL MCP protocol + tools → answer` runs deterministically. Its phrasing is a
-  pure function of the **real** tool results, so the asserted numbers prove the
-  full loop executed. (Bonus: first test to exercise the actual MCP protocol
-  round-trip — Phase 3 only typechecked it.)
-- **Unit (no DB, no API):** `assertInScope` (cross-account + `list_accounts`
-  denied), `buildAskOptions` (scoping/env/model wiring), `extractAnswer` /
+  reusing `resolveToolCall` (incl. the accountId injection) and the cap. So
+  `endpoint → service → scripted brain → REAL MCP protocol + tools → answer` runs
+  deterministically. Its phrasing is a pure function of the **real** tool results,
+  so the asserted numbers prove the full loop executed — including that a foreign/
+  omitted `accountId` is redirected to the scoped account. (Bonus: first test to
+  exercise the actual MCP protocol round-trip — Phase 3 only typechecked it.)
+- **Unit (no DB, no API):** `resolveToolCall` (inject scoped accountId;
+  `list_accounts`/unknown denied), `buildAskOptions` (scoping/env/model wiring +
+  `canUseTool`'s allow result carries `updatedInput`), `extractAnswer` /
   `extractToolCalls` over synthetic `SDKMessage` fixtures (incl. `error_max_turns`
   → graceful).
 - **Manual smoke** (`smoke:ask`): the **only** path that calls the real API — real

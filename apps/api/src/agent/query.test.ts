@@ -67,19 +67,26 @@ describe("buildAskOptions", () => {
     expect(options.systemPrompt).toContain(ACCOUNT);
   });
 
-  // The wiring between assertInScope and the SDK — a bug here (e.g. inverted
-  // allow/deny) would pass every other test, so assert the guard's verdicts.
-  it("canUseTool allows in-scope and denies foreign account / list_accounts", async () => {
+  // The wiring between resolveToolCall and the SDK permission result. Omitting
+  // updatedInput here fails the SDK's *runtime* allow-arm validation — which is
+  // only exercised by the smoke (smoke:ask). This assertion that the allow result
+  // carries updatedInput is the offline proxy for that smoke-only check.
+  it("canUseTool injects the scoped accountId on allow and denies list_accounts", async () => {
     const guard = options.canUseTool;
     const decide = (tool: string, input: Record<string, unknown>) =>
       guard?.(tool, input, undefined as never);
 
+    // In-scope: allow, with updatedInput carrying the scoped accountId.
     expect(await decide(prefixed("summarize_account"), { accountId: ACCOUNT })).toEqual({
       behavior: "allow",
+      updatedInput: { accountId: ACCOUNT },
     });
-    expect((await decide(prefixed("summarize_account"), { accountId: OTHER }))?.behavior).toBe(
-      "deny",
-    );
+    // A foreign accountId is OVERWRITTEN, not rejected — the model can't escape scope.
+    expect(await decide(prefixed("summarize_account"), { accountId: OTHER })).toEqual({
+      behavior: "allow",
+      updatedInput: { accountId: ACCOUNT },
+    });
+    // list_accounts is denied outright.
     expect((await decide(prefixed("list_accounts"), { accountId: ACCOUNT }))?.behavior).toBe(
       "deny",
     );
