@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER } from "@nestjs/core";
+import { AskModule } from "./ask/ask.module.js";
 import { CategorizationModule } from "./categorization/categorization.module.js";
 import { HttpExceptionsFilter } from "./common/http-exceptions.filter.js";
 import { StatementsModule } from "./statements/statements.module.js";
@@ -11,7 +12,7 @@ import { TransactionsModule } from "./transactions/transactions.module.js";
  * harness, which never runs `main.ts`.
  */
 @Module({
-  imports: [StatementsModule, TransactionsModule, CategorizationModule],
+  imports: [StatementsModule, TransactionsModule, CategorizationModule, AskModule],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionsFilter }],
 })
 export class AppModule {}
