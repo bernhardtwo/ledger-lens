@@ -4,7 +4,7 @@
  * ingesting or listing. Kept separate from `repository.ts` so that file stays
  * focused on statements/transactions.
  */
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { accounts } from "./schema.js";
 
@@ -12,4 +12,9 @@ import { accounts } from "./schema.js";
 export async function getAccountById(db: Database, id: string) {
   const rows = await db.select().from(accounts).where(eq(accounts.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+/** List all accounts, ordered by name for a stable, deterministic result. */
+export async function listAccounts(db: Database) {
+  return db.select().from(accounts).orderBy(asc(accounts.name));
 }

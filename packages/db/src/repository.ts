@@ -15,7 +15,7 @@ import {
   IsoDateSchema,
   type TransactionDraft,
 } from "@ledger-lens/shared";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "./client.js";
 import { statements, transactions } from "./schema.js";
@@ -139,6 +139,11 @@ export interface ListTransactionsParams {
   readonly limit: number;
   /** Opaque keyset cursor from a previous page, or `null`/absent for the first page. */
   readonly cursor?: string | null;
+  /** Optional filters (used by the MCP server; the HTTP list endpoint passes none). */
+  readonly dateFrom?: string | undefined;
+  readonly dateTo?: string | undefined;
+  readonly category?: Category | undefined;
+  readonly direction?: Direction | undefined;
 }
 
 export interface TransactionsPage {
@@ -159,17 +164,28 @@ export async function listTransactions(
   const limit = Math.min(Math.max(Math.trunc(params.limit), 1), 200);
   const cursor = params.cursor ? decodeCursor(params.cursor) : null;
 
-  const accountFilter = eq(transactions.accountId, params.accountId);
-  // Row-value keyset seek: `(transaction_date, id) > (cursor)`. The single
-  // tuple comparison is the idiomatic form that drives the
-  // (account_id, transaction_date, id) index directly. Casts are safe because
-  // `decodeCursor` validates the halves as a date and a uuid.
-  const where = cursor
-    ? and(
-        accountFilter,
-        sql`(${transactions.transactionDate}, ${transactions.id}) > (${cursor.date}::date, ${cursor.id}::uuid)`,
-      )
-    : accountFilter;
+  const conditions = [eq(transactions.accountId, params.accountId)];
+  if (params.dateFrom !== undefined) {
+    conditions.push(gte(transactions.transactionDate, params.dateFrom));
+  }
+  if (params.dateTo !== undefined) {
+    conditions.push(lte(transactions.transactionDate, params.dateTo));
+  }
+  if (params.category !== undefined) {
+    conditions.push(eq(transactions.category, params.category));
+  }
+  if (params.direction !== undefined) {
+    conditions.push(eq(transactions.direction, params.direction));
+  }
+  if (cursor) {
+    // Row-value keyset seek: `(transaction_date, id) > (cursor)` — the idiomatic
+    // form that drives the (account_id, transaction_date, id) index. Casts are
+    // safe because `decodeCursor` validates the halves as a date and a uuid.
+    conditions.push(
+      sql`(${transactions.transactionDate}, ${transactions.id}) > (${cursor.date}::date, ${cursor.id}::uuid)`,
+    );
+  }
+  const where = and(...conditions);
 
   const rows = await db
     .select(listProjection)
@@ -183,6 +199,43 @@ export async function listTransactions(
   const last = items.at(-1);
   const nextCursor = hasMore && last ? encodeCursor(last.transactionDate, last.id) : null;
   return { items, nextCursor };
+}
+
+/** Minimal row for money aggregation: category bucket, direction, magnitude. */
+export interface TransactionAmountRow {
+  readonly category: Category | null;
+  readonly direction: Direction;
+  readonly amountMinor: bigint;
+}
+
+/**
+ * Fetch the minimal `{ category, direction, amount_minor }` for an account's
+ * transactions in an optional date range — the input to the deterministic money
+ * aggregation folds (MCP server, ADR-0007). Account-scoped; no pagination.
+ */
+export async function listTransactionAmounts(
+  db: Database,
+  params: {
+    readonly accountId: string;
+    readonly dateFrom?: string | undefined;
+    readonly dateTo?: string | undefined;
+  },
+): Promise<TransactionAmountRow[]> {
+  const conditions = [eq(transactions.accountId, params.accountId)];
+  if (params.dateFrom !== undefined) {
+    conditions.push(gte(transactions.transactionDate, params.dateFrom));
+  }
+  if (params.dateTo !== undefined) {
+    conditions.push(lte(transactions.transactionDate, params.dateTo));
+  }
+  return db
+    .select({
+      category: transactions.category,
+      direction: transactions.direction,
+      amountMinor: transactions.amountMinor,
+    })
+    .from(transactions)
+    .where(and(...conditions));
 }
 
 /**

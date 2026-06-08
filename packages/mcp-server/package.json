@@ -2,5 +2,24 @@
   "name": "@ledger-lens/mcp-server",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "node --env-file=../../.env --import tsx ./src/main.ts"
+  },
+  "dependencies": {
+    "@ledger-lens/db": "workspace:*",
+    "@ledger-lens/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.19.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^10.16.0",
+    "@types/node": "^22.10.5",
+    "testcontainers": "^10.16.0",
+    "tsx": "^4.19.2"
+  }
 }
