@@ -24,24 +24,10 @@ jobs:
   eval:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: ledgerlens
-          POSTGRES_PASSWORD: ledgerlens
-          POSTGRES_DB: ledgerlens
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ledgerlens"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+    # No Postgres service: the runner provisions its own throwaway Postgres via
+    # testcontainers (ubuntu runners have Docker), migrates + seeds it, and points
+    # the agent at it — so the eval world is built fresh every run (ADR-0009 §9).
     env:
-      # The runner migrates + seeds this DB itself; the agent's MCP child inherits it.
-      DATABASE_URL: postgresql://ledgerlens:ledgerlens@localhost:5432/ledgerlens
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:

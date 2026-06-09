@@ -32,9 +32,13 @@ Phase 2 categoriser scorer drops in as a new dataset + scorer in v1.1.
 
 ## Running
 
+The runner builds its own **ephemeral Postgres** every run (via testcontainers,
+like the integration tests): it migrates + seeds a throwaway DB and points the
+agent at it, so the eval world is fresh and isolated — the dev DB is never
+touched. You just need **Docker running** and `ANTHROPIC_API_KEY` set; no
+`DATABASE_URL`.
+
 ```bash
-docker compose up -d postgres
-pnpm --filter @ledger-lens/db db:migrate   # schema
-pnpm eval                                  # migrates + seeds + runs (needs ANTHROPIC_API_KEY)
+pnpm eval                                  # Haiku (default), needs ANTHROPIC_API_KEY + Docker
 pnpm eval -- --models claude-haiku-4-5,claude-sonnet-4-6 --judge
 ```

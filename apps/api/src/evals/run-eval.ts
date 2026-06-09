@@ -4,12 +4,17 @@
  * `.test.ts`/`.itest.ts`), so no vitest run picks it up, and it is never part of
  * `pnpm check` / `pnpm test` / `test:integration`.
  *
- * It migrates + seeds a real Postgres (`DATABASE_URL`), runs the committed golden
- * dataset through the real agent for each `--model`, scores deterministically
- * (+ optional `--judge`), writes `report.json` / `report.md`, and exits non-zero
- * if the **primary** model misses the gate.
+ * **Ephemeral, deterministic substrate (ADR-0009 §9).** The eval builds its world
+ * fresh every run: it starts a throwaway Postgres via testcontainers (like the
+ * integration tests), `applyMigrations` + `seedDemo` into it, and points
+ * `process.env.DATABASE_URL` at it **before** invoking the agent — so the agent's
+ * MCP child reads the *same* ephemeral DB. The dev DB is never touched, so the eval
+ * can't be contaminated by leftover state; it just needs Docker running. It then
+ * runs the committed golden dataset through the real agent for each `--model`,
+ * scores deterministically (+ optional `--judge`), writes `report.json` /
+ * `report.md`, and exits non-zero if the **primary** model misses the gate.
  *
- * Usage (needs DATABASE_URL + ANTHROPIC_API_KEY in the environment):
+ * Usage (needs ANTHROPIC_API_KEY + a running Docker; no DATABASE_URL):
  *   pnpm eval
  *   pnpm eval -- --models claude-haiku-4-5,claude-sonnet-4-6 --judge --out ./reports
  */
@@ -33,6 +38,7 @@ import {
   scoreScope,
   scoreToolSelection,
 } from "@ledger-lens/evals";
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_MAX_BUDGET_USD,
@@ -158,10 +164,6 @@ function gateMark(evaluation: CaseEvaluation): string {
 }
 
 async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (databaseUrl === undefined || databaseUrl === "") {
-    throw new Error("DATABASE_URL is required to run evals");
-  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey === undefined || apiKey === "") {
     throw new Error("ANTHROPIC_API_KEY is required to run evals");
@@ -175,6 +177,17 @@ async function main(): Promise<void> {
   const maxTurns = numberFromEnv("ANTHROPIC_AGENT_MAX_TURNS", DEFAULT_MAX_TURNS);
   const maxBudgetUsd = numberFromEnv("ANTHROPIC_AGENT_MAX_BUDGET_USD", DEFAULT_MAX_BUDGET_USD);
   const judge = args.judge ? new JudgeClient(apiKey, args.judgeModel ?? DEFAULT_AGENT_MODEL) : null;
+
+  // A throwaway Postgres built fresh from migrations + the committed seed every
+  // run, so the eval can never read contaminated dev-DB state (ADR-0009 §9).
+  // Started BEFORE the try; the finally below tears it down (incl. if seeding throws).
+  stdout.write("Starting ephemeral Postgres (testcontainers)...\n");
+  const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+  const databaseUrl = container.getConnectionUri();
+  // The agent's MCP child reads process.env.DATABASE_URL — point it at THIS DB
+  // before any agent call so its tools query the same ephemeral world we seed.
+  // This overrides any dev DATABASE_URL that `--env-file-if-exists` loaded from .env.
+  process.env.DATABASE_URL = databaseUrl;
 
   const { db, client } = createDatabase(databaseUrl);
   try {
@@ -212,7 +225,13 @@ async function main(): Promise<void> {
 
     process.exitCode = primaryGatePass(report) ? 0 : 1;
   } finally {
-    await client.end();
+    // Stop the container UNCONDITIONALLY — even if draining the pool throws/hangs —
+    // so a manual or scheduled run can never leak a Docker container.
+    try {
+      await client.end({ timeout: 5 });
+    } finally {
+      await container.stop();
+    }
   }
 }
 
