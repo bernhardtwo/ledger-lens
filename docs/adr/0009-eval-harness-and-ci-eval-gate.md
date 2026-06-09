@@ -101,6 +101,17 @@ model only** (the env model CI runs by default); additional `--models` are
 comparison-only, so deliberately comparing against a weaker model never fails the
 gate.
 
+> **Outcome (Phase 5).** This capability drove a real decision: on the expanded
+> 23-case set, `claude-haiku-4-5` and `claude-sonnet-4-6` **both scored 100%** on
+> every metric, so the default stays **Haiku** on cost (~26% cheaper, same latency)
+> — see ADR-0008 §5 for the decision and its honest caveats (a single
+> temperature-uncontrolled run; Sonnet's marginally more conservative judgment on
+> one ambiguous case). Building the comparison set surfaced *two* findings the eval
+> existed to catch: the ÷100 determinism violation (fixed: ADR-0007 §2a), and a
+> **mis-specified case** ("how much income…", which the tools can't isolate) that
+> was rewarding a semantic leap over a determinism-respecting refusal — reworded to
+> ask for total inflow rather than retuned, to avoid gaming the comparison.
+
 **8. Packaging: pure `packages/evals` + a thin runner in `apps/api`.**
 - `packages/evals` is the **app-independent harness**: the dataset + Zod loader,
   the pure scorers, the report builders (JSON + Markdown), the model-comparison

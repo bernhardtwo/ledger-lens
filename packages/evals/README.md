@@ -30,6 +30,19 @@ package never imports `apps/api` and never calls the real API.
 v1 evaluates the **Q&A agent**. The harness core is **feature-agnostic**, so the
 Phase 2 categoriser scorer drops in as a new dataset + scorer in v1.1.
 
+## Model decision (Phase 5)
+
+The agent default is **`claude-haiku-4-5`**, chosen on this harness's data. On the
+23-case golden set — multi-tool composition (`all`), partial/edge date ranges,
+large odd-cents figures, honesty refusals, both currencies — Haiku and
+`claude-sonnet-4-6` **both scored 100%** on every metric, so the call is cost:
+Haiku ran ~26% cheaper at the same turn count/latency. **Caveats (honest):** this is
+a **single run** (the Agent SDK exposes no temperature, so runs vary), and on the
+one *ambiguous* case before it was fixed, Sonnet showed marginally more
+conservative determinism-first judgment. So Haiku is the **cost-justified** default,
+not proven-superior — flip `ANTHROPIC_AGENT_MODEL` to Sonnet if production shows the
+agent over-assuming. See ADR-0008 §5 / ADR-0009 §7.
+
 ## Running
 
 The runner builds its own **ephemeral Postgres** every run (via testcontainers,

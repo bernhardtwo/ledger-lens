@@ -108,6 +108,21 @@ Haiku — is exactly the determinism-first signal Phase 5 exists to provide.
 per-request guardrail). Haiku is the v1 default; a one-line env switch to Sonnet
 if Phase 5 evals say it misses the bar.
 
+> **Model decision (Phase 5).** `claude-haiku-4-5` is **confirmed** as the default.
+> On the expanded 23-case golden set (multi-tool composition, partial/edge date
+> ranges, large odd-cents figures, honesty refusals, both currencies) Haiku and
+> `claude-sonnet-4-6` **both scored 100%** on every gating + reported metric, so the
+> choice is made on cost: Haiku ran ~26% cheaper (~$0.38 vs ~$0.51 for the full set)
+> at the same turn count and latency. Two honest caveats: **(a)** this rests on a
+> **single run** — the Agent SDK exposes no temperature control, so runs vary, and
+> one pass of 23 cases is thin evidence; **(b)** on the one *ambiguous* case before
+> it was fixed ("how much income…", where the tools have no income-only total),
+> Sonnet showed **slightly more conservative determinism-first judgment** — it
+> declined to hand-sum rather than treating total inflow as income, which is the
+> behaviour this project prizes. So Haiku is the **cost-justified** default, not a
+> proven-superior one; keep the one-line env switch to Sonnet and flip it if
+> production shows the agent over-assuming on under-specified questions.
+
 **6. Response shape.** `200` with `{ answer, toolCalls: [{ tool, input }], meta: {
 model, turns } }`. `toolCalls` (prefix stripped) is "show-your-work" transparency
 and a Phase 5 eval signal. Cost/usage are **logged server-side, never returned**.
