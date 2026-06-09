@@ -107,12 +107,16 @@ matches `2000`).
 
 ## The runner (`apps/api/src/evals/`, the thin executable)
 
-`run-eval.ts` (`pnpm eval`, real API + real DB; a `.ts`, never picked up by
-vitest):
+`run-eval.ts` (`pnpm eval`, real API + an ephemeral DB; a `.ts`, never picked up
+by vitest):
 
-1. Require `DATABASE_URL` + `ANTHROPIC_API_KEY`; parse args (`--models`,
+1. Require `ANTHROPIC_API_KEY` (no `DATABASE_URL`); parse args (`--models`,
    `--judge`, `--out`, thresholds).
-2. `createDatabase` → `applyMigrations` → `seedDemo` (all idempotent).
+2. Start a **throwaway `PostgreSqlContainer`** (testcontainers), set
+   `process.env.DATABASE_URL` to its URI **before** any agent call (so the agent's
+   MCP child reads this DB), then `createDatabase` → `applyMigrations` →
+   `seedDemo`. The container is stopped in `finally`. The world is built fresh
+   every run, isolated from the dev DB — so the eval can't read contaminated state.
 3. For each model: build `AgentSdkQaAgent({ model, maxTurns, maxBudgetUsd })`
    (the `AgentRunner` port impl). For each case: `agent.ask` → `{ answer,
    toolCalls, turns, costUsd }`.
@@ -165,7 +169,8 @@ The runner implements the port with the real agent; `packages/evals` never impor
   `@ledger-lens/mcp-server`, `vitest`, `@types/node`, `typescript`, `tsx` (dev).
 - `apps/api` runner: **no new third-party deps** — reuses
   `@anthropic-ai/claude-agent-sdk`, `@ledger-lens/db`, `@ledger-lens/mcp-server`,
-  and `@anthropic-ai/sdk` (judge). Commit `pnpm-lock.yaml`.
+  `@anthropic-ai/sdk` (judge), and `@testcontainers/postgresql` (the ephemeral DB —
+  already a devDependency for the integration tests). Commit `pnpm-lock.yaml`.
 - A minor internal change: optional `costUsd` on `QaAnswer` (set by the adapter,
   which already computes it; the HTTP response is unchanged — cost is still never
   returned to the client).
@@ -173,9 +178,10 @@ The runner implements the port with the real agent; `packages/evals` never impor
 ## CI
 
 `.github/workflows/eval.yml` — `workflow_dispatch` + weekly `schedule` (never
-push/PR). Postgres **service container**; runner migrates + seeds it; `pnpm eval`
-with `ANTHROPIC_API_KEY` as a GitHub secret; report uploaded as an artifact; job
-fails on a sub-threshold gate. `ci.yml` is unchanged.
+push/PR). **No Postgres service** — the runner provisions its own throwaway
+Postgres via testcontainers (ubuntu runners have Docker). `pnpm eval` with
+`ANTHROPIC_API_KEY` as a GitHub secret; report uploaded as an artifact; job fails
+on a sub-threshold gate. `ci.yml` is unchanged.
 
 ## Out of scope (later phases)
 

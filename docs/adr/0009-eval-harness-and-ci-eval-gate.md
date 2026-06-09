@@ -121,14 +121,26 @@ The agent is **not** extracted into `packages/agent`: unlike `db` (promoted out 
 only consumers are both inside `apps/api` (the HTTP endpoint and this runner), so
 it does not meet that extraction trigger. Kept as a possible later move.
 
-**9. How it runs + CI.** `pnpm eval` is the command (real API + real DB; **not**
-in `pnpm check` / `pnpm test` / `test:integration`). A **separate**
-`.github/workflows/eval.yml` runs on **`workflow_dispatch` + a weekly
-`schedule`** (never push/PR): it stands up a Postgres service container, lets the
-runner migrate + seed it, runs `pnpm eval` with `ANTHROPIC_API_KEY` as a GitHub
-secret, uploads the report as an artifact, and fails the job on a sub-threshold
-gate. The existing `ci.yml` is unchanged — the deterministic + integration suites
-stay exactly as they are.
+**9. How it runs + CI — against an ephemeral, self-built DB.** `pnpm eval` is the
+command (real API; **not** in `pnpm check` / `pnpm test` / `test:integration`).
+The determinism-first rule applies to the eval's *substrate* too: the runner
+builds its world fresh every run rather than trusting whatever sits in a dev DB.
+It starts a **throwaway Postgres via testcontainers** (the same pattern the
+integration tests use), `applyMigrations` + `seedDemo` into it, and sets
+`process.env.DATABASE_URL` to the container URI **before** invoking the agent — so
+the agent's MCP child queries the *same* ephemeral world — then stops the
+container in `finally`. The eval can therefore never read contaminated state (e.g.
+smoke leftovers) from a shared DB; it just needs Docker running, and
+`DATABASE_URL` is no longer an input. Ephemeral-only for v1 (no dev-DB escape
+hatch, so the footgun can't return); a `--database-url` override can be added
+later if ever needed.
+
+A **separate** `.github/workflows/eval.yml` runs on **`workflow_dispatch` + a
+weekly `schedule`** (never push/PR): it runs `pnpm eval` with `ANTHROPIC_API_KEY`
+as a GitHub secret (the runner self-provisions Postgres — **no service
+container**), uploads the report as an artifact, and fails the job on a
+sub-threshold gate. The existing `ci.yml` is unchanged — the deterministic +
+integration suites stay exactly as they are.
 
 **10. Report = `report.json` + `report.md`, gitignored.** Machine-readable totals
 + per-case detail (metrics, answer, tool calls, turns, cost) and a human Markdown
@@ -171,10 +183,12 @@ response mapping is unchanged and still never returns cost to the client
   decision with data; a structured report feeding the Phase 8 write-up; the
   harness core fully unit-tested offline with no real API in any suite.
 - **Negative (accepted):** the real-agent eval is token-spending and lives outside
-  the per-commit gates (manual/scheduled only); a small amount of runner-side I/O
-  (agent invocation, faithfulness re-execution, the judge call) is exercised only
-  by the real-API path, like the smoke; `packages/evals` dev-depends on
-  `@ledger-lens/mcp-server` for the folds used by the consistency test.
+  the per-commit gates (manual/scheduled only); it now requires **Docker** when run
+  (it provisions its own Postgres), as the integration suite already does; a small
+  amount of runner-side I/O (agent invocation, faithfulness re-execution, the judge
+  call) is exercised only by the real-API path, like the smoke; `packages/evals`
+  dev-depends on `@ledger-lens/mcp-server` for the folds used by the consistency
+  test.
 - **Follow-ups:** promote **faithfulness to a gating metric** once its
   false-positive rate is observed to be 0 on the v1 set; add the **categoriser
   eval** (dataset + classification scorer) in v1.1; revisit extracting
