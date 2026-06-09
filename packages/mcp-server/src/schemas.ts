@@ -43,9 +43,26 @@ export type ListTransactionsInput = z.input<typeof ListTransactionsInputSchema>;
 
 // ---- outputs ----
 
-/** A list item enriched with its category (Phase 2), matching the HTTP projection. */
+/**
+ * Money as the **agent** sees it: the canonical minor-unit `MoneyDTO` (kept for
+ * fidelity) PLUS a `decimal` — the exact human amount rendered deterministically by
+ * the shared `toDecimalString` (e.g. `"7504.02"`). The agent relays `decimal`
+ * verbatim and never converts minor units itself, so decimal placement stays
+ * deterministic code, not LLM math (ADR-0004, ADR-0007 §money-on-the-wire). Only
+ * the MCP tool surface carries it; `MoneyDTO`/ADR-0005 are unchanged, and the HTTP
+ * API (not an LLM surface) still returns the plain `MoneyDTO`.
+ */
+export const ToolMoneySchema = z.intersection(
+  MoneySchema,
+  z.object({
+    decimal: z.string().regex(/^\d+(\.\d+)?$/, "decimal must be a non-negative decimal"),
+  }),
+);
+
+/** A list item enriched with its category (Phase 2); money carries the `decimal`. */
 export const CategorizedTransactionSchema = TransactionListItemSchema.extend({
   category: CategorySchema.nullable(),
+  amount: ToolMoneySchema,
 });
 
 export const ListAccountsOutputSchema = z.object({ accounts: z.array(AccountSchema) });
@@ -59,7 +76,7 @@ export const ListTransactionsOutputSchema = z.object({
 
 const CategorySpendingSchema = z.object({
   category: CategorySchema,
-  total: MoneySchema,
+  total: ToolMoneySchema,
   transactionCount: z.number().int().nonnegative(),
 });
 
@@ -69,7 +86,7 @@ export const SpendingByCategoryOutputSchema = z.object({
   dateFrom: IsoDateSchema.nullable(),
   dateTo: IsoDateSchema.nullable(),
   categories: z.array(CategorySpendingSchema),
-  total: MoneySchema,
+  total: ToolMoneySchema,
 });
 
 export const AccountSummaryOutputSchema = z.object({
@@ -77,8 +94,8 @@ export const AccountSummaryOutputSchema = z.object({
   currency: CurrencyCodeSchema,
   dateFrom: IsoDateSchema.nullable(),
   dateTo: IsoDateSchema.nullable(),
-  totalIn: MoneySchema,
-  totalOut: MoneySchema,
-  net: z.object({ direction: DirectionSchema, amount: MoneySchema }),
+  totalIn: ToolMoneySchema,
+  totalOut: ToolMoneySchema,
+  net: z.object({ direction: DirectionSchema, amount: ToolMoneySchema }),
   transactionCount: z.number().int().nonnegative(),
 });

@@ -178,7 +178,7 @@ describe("list_transactions", () => {
       description: "WHOLE FOODS",
       direction: "debit",
       category: "groceries",
-      amount: { amount: "3000", currency: "USD", minorUnitExponent: 2 },
+      amount: { amount: "3000", currency: "USD", minorUnitExponent: 2, decimal: "30.00" },
     });
     expect(result.items[0]).not.toHaveProperty("rawRow");
   });
@@ -225,21 +225,26 @@ describe("summarize_spending_by_category", () => {
     expect(result.categories).toEqual([
       {
         category: "groceries",
-        total: { amount: "3000", currency: "USD", minorUnitExponent: 2 },
+        total: { amount: "3000", currency: "USD", minorUnitExponent: 2, decimal: "30.00" },
         transactionCount: 1,
       },
       {
         category: "dining",
-        total: { amount: "2000", currency: "USD", minorUnitExponent: 2 },
+        total: { amount: "2000", currency: "USD", minorUnitExponent: 2, decimal: "20.00" },
         transactionCount: 2,
       },
       {
         category: "shopping",
-        total: { amount: "2000", currency: "USD", minorUnitExponent: 2 },
+        total: { amount: "2000", currency: "USD", minorUnitExponent: 2, decimal: "20.00" },
         transactionCount: 1,
       },
     ]);
-    expect(result.total).toEqual({ amount: "7000", currency: "USD", minorUnitExponent: 2 });
+    expect(result.total).toEqual({
+      amount: "7000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "70.00",
+    });
   });
 
   it("honours the date range", async () => {
@@ -251,16 +256,21 @@ describe("summarize_spending_by_category", () => {
     expect(result.categories).toEqual([
       {
         category: "groceries",
-        total: { amount: "3000", currency: "USD", minorUnitExponent: 2 },
+        total: { amount: "3000", currency: "USD", minorUnitExponent: 2, decimal: "30.00" },
         transactionCount: 1,
       },
       {
         category: "dining",
-        total: { amount: "2000", currency: "USD", minorUnitExponent: 2 },
+        total: { amount: "2000", currency: "USD", minorUnitExponent: 2, decimal: "20.00" },
         transactionCount: 2,
       },
     ]);
-    expect(result.total).toEqual({ amount: "5000", currency: "USD", minorUnitExponent: 2 });
+    expect(result.total).toEqual({
+      amount: "5000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "50.00",
+    });
   });
 });
 
@@ -268,11 +278,21 @@ describe("summarize_account", () => {
   it("computes totals and a non-negative net (credit)", async () => {
     const result = await handleSummarizeAccount(db, { accountId });
     expect(AccountSummaryOutputSchema.safeParse(result).success).toBe(true);
-    expect(result.totalIn).toEqual({ amount: "250000", currency: "USD", minorUnitExponent: 2 });
-    expect(result.totalOut).toEqual({ amount: "7000", currency: "USD", minorUnitExponent: 2 });
+    expect(result.totalIn).toEqual({
+      amount: "250000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "2500.00",
+    });
+    expect(result.totalOut).toEqual({
+      amount: "7000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "70.00",
+    });
     expect(result.net).toEqual({
       direction: "credit",
-      amount: { amount: "243000", currency: "USD", minorUnitExponent: 2 },
+      amount: { amount: "243000", currency: "USD", minorUnitExponent: 2, decimal: "2430.00" },
     });
     expect(result.transactionCount).toBe(5);
   });

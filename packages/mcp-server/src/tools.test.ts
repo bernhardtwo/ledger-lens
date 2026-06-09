@@ -123,7 +123,7 @@ describe("handleListTransactions", () => {
       description: "WHOLE FOODS",
       direction: "debit",
       category: "groceries",
-      amount: { amount: "3000", currency: "USD", minorUnitExponent: 2 },
+      amount: { amount: "3000", currency: "USD", minorUnitExponent: 2, decimal: "30.00" },
     });
     expect(result.items[0]).not.toHaveProperty("rawRow");
     expect(result.items[0]).not.toHaveProperty("amountMinor");
@@ -187,11 +187,16 @@ describe("handleSpendingByCategory", () => {
     expect(result.categories).toEqual([
       {
         category: "groceries",
-        total: { amount: "3000", currency: "EUR", minorUnitExponent: 2 },
+        total: { amount: "3000", currency: "EUR", minorUnitExponent: 2, decimal: "30.00" },
         transactionCount: 1,
       },
     ]);
-    expect(result.total).toEqual({ amount: "3000", currency: "EUR", minorUnitExponent: 2 });
+    expect(result.total).toEqual({
+      amount: "3000",
+      currency: "EUR",
+      minorUnitExponent: 2,
+      decimal: "30.00",
+    });
   });
 
   it("echoes null dates when no range is given", async () => {
@@ -221,11 +226,21 @@ describe("handleSummarizeAccount", () => {
 
     const result = await handleSummarizeAccount(db, { accountId: ACCOUNT_ID });
 
-    expect(result.totalIn).toEqual({ amount: "250000", currency: "USD", minorUnitExponent: 2 });
-    expect(result.totalOut).toEqual({ amount: "3000", currency: "USD", minorUnitExponent: 2 });
+    expect(result.totalIn).toEqual({
+      amount: "250000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "2500.00",
+    });
+    expect(result.totalOut).toEqual({
+      amount: "3000",
+      currency: "USD",
+      minorUnitExponent: 2,
+      decimal: "30.00",
+    });
     expect(result.net).toEqual({
       direction: "credit",
-      amount: { amount: "247000", currency: "USD", minorUnitExponent: 2 },
+      amount: { amount: "247000", currency: "USD", minorUnitExponent: 2, decimal: "2470.00" },
     });
     expect(result.transactionCount).toBe(2);
   });

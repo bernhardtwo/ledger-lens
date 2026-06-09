@@ -119,6 +119,17 @@ export function toMoneyDTO(value: Money): MoneyDTO {
   };
 }
 
+/**
+ * Render a `MoneyDTO` (minor units) directly to its canonical decimal string —
+ * `toDecimalString` over the reconstructed `Money`. The single, shared definition
+ * of "the human decimal of a DTO", so any presentation surface that needs it (the
+ * MCP tools' `decimal` field) and any check that re-derives it (the eval's
+ * faithfulness scorer) cannot drift apart. Lossless: string → bigint → string.
+ */
+export function moneyDtoToDecimalString(dto: MoneyDTO): string {
+  return toDecimalString(money(BigInt(dto.amount), dto.currency));
+}
+
 /** Validate and deserialize an unknown input into `Money` at a trust boundary. */
 export function parseMoney(input: unknown): Money {
   const dto = MoneySchema.parse(input);

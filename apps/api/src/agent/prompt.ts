@@ -21,7 +21,8 @@ export function buildSystemPrompt(accountId: string): string {
     "- Base every number, amount, date and fact in your answer on a value returned by a tool. Report tool results as-is; do not alter them.",
     "- Never compute, add, subtract, average, or estimate any figure yourself. If a number the user asks for is not directly returned by a tool, say you cannot provide it — do not calculate it.",
     "- Never invent or guess data. If the tools do not contain what is needed to answer, say so plainly.",
-    "- Report money exactly as the tools return it (the amount and its currency).",
+    "- Every money value the tools return has a 'decimal' field with the exact human amount (for example '7504.02'). Report that 'decimal' value together with the 'currency' (for example '$7,504.02' or '7504.02 USD').",
+    "- The 'amount' field is in minor units (e.g. cents). NEVER convert it yourself — do not divide by 100, move the decimal point, or reformat it. Always use the 'decimal' field for the human amount.",
     "- summarize_account returns net cash flow as a direction plus a positive amount: 'credit' means money came in (a net inflow), 'debit' means money went out (a net outflow). Relay it that way — e.g. 'a net inflow of $X' or 'a net outflow of $X' — using the tool's direction and amount. Do not synthesize a signed number or work out the sign yourself.",
     "- Answer concisely and directly, in plain language.",
   ].join("\n");

@@ -13,8 +13,8 @@ import {
   listTransactionAmounts,
   listTransactions,
 } from "@ledger-lens/db";
-import type { Account, AccountKind, CurrencyCode } from "@ledger-lens/shared";
-import { money, toMoneyDTO } from "@ledger-lens/shared";
+import type { Account, AccountKind, CurrencyCode, MoneyDTO } from "@ledger-lens/shared";
+import { money, moneyDtoToDecimalString, toMoneyDTO } from "@ledger-lens/shared";
 import type { z } from "zod";
 import { summarizeAccountFlow, summarizeSpendingByCategory } from "./aggregation.js";
 import type {
@@ -33,6 +33,16 @@ interface AccountRow {
   readonly institution: string;
   readonly currencyCode: CurrencyCode;
   readonly kind: AccountKind;
+}
+
+/**
+ * Augment a `MoneyDTO` with its deterministic `decimal` render (the shared
+ * `toDecimalString`) — the field the agent relays so it never converts minor units
+ * itself (ADR-0007 §money-on-the-wire, ADR-0008). Pure; no rounding (the magnitude
+ * is exact). Applied to every money value the tools return.
+ */
+function withDecimal(dto: MoneyDTO) {
+  return { ...dto, decimal: moneyDtoToDecimalString(dto) };
 }
 
 function toAccountDto(row: AccountRow): Account {
@@ -54,7 +64,7 @@ function toListItem(row: TransactionListRow): z.input<typeof CategorizedTransact
     postedDate: row.postedDate,
     description: row.description,
     direction: row.direction,
-    amount: toMoneyDTO(money(row.amountMinor, row.currencyCode)),
+    amount: withDecimal(toMoneyDTO(money(row.amountMinor, row.currencyCode))),
     fingerprint: row.fingerprint,
     category: row.category,
   };
@@ -119,8 +129,11 @@ export async function handleSpendingByCategory(
     currency: account.currencyCode,
     dateFrom: input.dateFrom ?? null,
     dateTo: input.dateTo ?? null,
-    categories: [...summary.categories],
-    total: summary.total,
+    categories: summary.categories.map((entry) => ({
+      ...entry,
+      total: withDecimal(entry.total),
+    })),
+    total: withDecimal(summary.total),
   };
 }
 
@@ -144,9 +157,9 @@ export async function handleSummarizeAccount(
     currency: account.currencyCode,
     dateFrom: input.dateFrom ?? null,
     dateTo: input.dateTo ?? null,
-    totalIn: summary.totalIn,
-    totalOut: summary.totalOut,
-    net: summary.net,
+    totalIn: withDecimal(summary.totalIn),
+    totalOut: withDecimal(summary.totalOut),
+    net: { direction: summary.net.direction, amount: withDecimal(summary.net.amount) },
     transactionCount: summary.transactionCount,
   };
 }

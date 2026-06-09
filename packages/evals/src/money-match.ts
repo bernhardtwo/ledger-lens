@@ -14,11 +14,16 @@
  *    mistaken for fabricated money. This keeps the (eventually gating) metric from
  *    flaking on a real-API run.
  */
-import { type MoneyDTO, money, toDecimalString } from "@ledger-lens/shared";
+import { type MoneyDTO, moneyDtoToDecimalString } from "@ledger-lens/shared";
 
-/** Render a `MoneyDTO` as its canonical decimal string (e.g. `"2495.98"`). */
+/**
+ * Render a `MoneyDTO` as its canonical decimal string (e.g. `"2495.98"`). Delegates
+ * to the shared formatter — the SAME one the MCP tools use to build their `decimal`
+ * field — so the figure the agent relays and the figure faithfulness re-derives are
+ * guaranteed identical.
+ */
 export function renderDecimal(dto: MoneyDTO): string {
-  return toDecimalString(money(BigInt(dto.amount), dto.currency));
+  return moneyDtoToDecimalString(dto);
 }
 
 /**
