@@ -65,6 +65,21 @@ describe("scoreAnswer", () => {
       ]).pass,
     ).toBe(true);
   });
+
+  it("all: passes only when EVERY part is present (multi-tool composition)", () => {
+    const gt: GroundTruth = {
+      kind: "all",
+      parts: [
+        { kind: "figure", money: { amount: "250402", currency: "USD", minorUnitExponent: 2 } },
+        { kind: "text", contains: ["housing"] },
+      ],
+    };
+    expect(scoreAnswer("Net was $2,504.02 and your top category was housing.", gt, []).pass).toBe(
+      true,
+    );
+    expect(scoreAnswer("Net was $2,504.02.", gt, []).pass).toBe(false); // category missing
+    expect(scoreAnswer("Your top category was housing.", gt, []).pass).toBe(false); // figure missing
+  });
 });
 
 describe("scoreFaithfulness", () => {

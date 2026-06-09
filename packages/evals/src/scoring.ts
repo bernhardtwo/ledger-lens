@@ -7,7 +7,7 @@
  *  - **Faithfulness** (reported in v1): no money figure outside what the agent saw.
  *  - **Scope** (reported): no `list_accounts`; no foreign `accountId`.
  */
-import type { GroundTruth, ToolExpectation } from "./dataset.js";
+import type { GroundTruth, GroundTruthPart, ToolExpectation } from "./dataset.js";
 import {
   answerContainsAmount,
   canonicalAmount,
@@ -79,10 +79,31 @@ export interface AnswerResult {
   readonly detail: string;
 }
 
+interface PartResult {
+  readonly pass: boolean;
+  readonly detail: string;
+}
+
+/** Score one figure/text part of an answer (shared by single cases and `all`). */
+function scorePart(answer: string, part: GroundTruthPart): PartResult {
+  if (part.kind === "figure") {
+    const decimal = renderDecimal(part.money);
+    const pass = answerContainsAmount(answer, decimal);
+    return { pass, detail: pass ? `found ${decimal}` : `missing ${decimal}` };
+  }
+  const lower = answer.toLowerCase();
+  const missing = part.contains.filter((needle) => !lower.includes(needle.toLowerCase()));
+  return {
+    pass: missing.length === 0,
+    detail: missing.length === 0 ? "all substrings present" : `missing: ${missing.join(", ")}`,
+  };
+}
+
 /**
  * The gating answer metric, by ground-truth kind: `figure` → contains the exact
  * figure; `text` → contains the required substring(s); `refusal` → fabricates no
- * figure (reuses faithfulness with no ground-truth figure to allow).
+ * figure (reuses faithfulness with no ground-truth figure to allow); `all` →
+ * **every** part passes (multi-tool composition: the answer must relay each result).
  */
 export function scoreAnswer(
   answer: string,
@@ -90,21 +111,10 @@ export function scoreAnswer(
   allowedFigures: readonly string[],
 ): AnswerResult {
   switch (groundTruth.kind) {
-    case "figure": {
-      const decimal = renderDecimal(groundTruth.money);
-      const pass = answerContainsAmount(answer, decimal);
-      return { pass, kind: "figure", detail: pass ? `found ${decimal}` : `missing ${decimal}` };
-    }
+    case "figure":
     case "text": {
-      const lower = answer.toLowerCase();
-      const missing = groundTruth.contains.filter(
-        (needle) => !lower.includes(needle.toLowerCase()),
-      );
-      return {
-        pass: missing.length === 0,
-        kind: "text",
-        detail: missing.length === 0 ? "all substrings present" : `missing: ${missing.join(", ")}`,
-      };
+      const { pass, detail } = scorePart(answer, groundTruth);
+      return { pass, kind: groundTruth.kind, detail };
     }
     case "refusal": {
       const faithfulness = scoreFaithfulness(answer, allowedFigures);
@@ -114,6 +124,14 @@ export function scoreAnswer(
         detail: faithfulness.pass
           ? "declined without a fabricated figure"
           : `fabricated figure(s): ${faithfulness.offenders.join(", ")}`,
+      };
+    }
+    case "all": {
+      const parts = groundTruth.parts.map((part) => scorePart(answer, part));
+      return {
+        pass: parts.every((part) => part.pass),
+        kind: "all",
+        detail: parts.map((part) => `[${part.pass ? "ok" : "miss"}] ${part.detail}`).join("; "),
       };
     }
     default: {

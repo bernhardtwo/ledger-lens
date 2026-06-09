@@ -5,7 +5,7 @@
  * call lives in the runner (`apps/api`), behind the `--judge` flag.
  */
 import { z } from "zod";
-import type { GroundTruth } from "./dataset.js";
+import type { GroundTruth, GroundTruthPart } from "./dataset.js";
 import { renderDecimal } from "./money-match.js";
 
 /** A judge's verdict on one answer: a 1–5 quality score plus a short rationale. */
@@ -14,14 +14,21 @@ export interface JudgeVerdict {
   readonly rationale: string;
 }
 
+function describePart(part: GroundTruthPart): string {
+  return part.kind === "figure"
+    ? `the figure ${renderDecimal(part.money)} ${part.money.currency}`
+    : `the term(s) ${part.contains.join(", ")}`;
+}
+
 function describeGroundTruth(groundTruth: GroundTruth): string {
   switch (groundTruth.kind) {
     case "figure":
-      return `The correct answer states the figure ${renderDecimal(groundTruth.money)} ${groundTruth.money.currency}.`;
     case "text":
-      return `A good answer mentions: ${groundTruth.contains.join(", ")}.`;
+      return `A good answer states ${describePart(groundTruth)}.`;
     case "refusal":
       return "The tools cannot answer this. A good answer declines honestly and invents no figure.";
+    case "all":
+      return `A good answer states ALL of: ${groundTruth.parts.map(describePart).join("; ")}.`;
     default: {
       const exhaustive: never = groundTruth;
       throw new Error(`unhandled ground-truth kind: ${JSON.stringify(exhaustive)}`);

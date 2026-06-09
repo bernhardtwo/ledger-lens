@@ -16,7 +16,7 @@ import {
   summarizeSpendingByCategory,
 } from "@ledger-lens/mcp-server";
 import type { CurrencyCode } from "@ledger-lens/shared";
-import type { Derivation, GroundTruth } from "./dataset.js";
+import type { Derivation, GroundTruth, GroundTruthPart } from "./dataset.js";
 
 function inRange(date: string, from?: string, to?: string): boolean {
   if (from !== undefined && date < from) {
@@ -38,12 +38,12 @@ function toAmountRows(rows: readonly DemoSeedRow[], from?: string, to?: string):
     }));
 }
 
-/** Recompute a case's expected ground truth from its account's seed rows. */
-export function computeGroundTruth(
+/** Recompute one figure/text part from the seed (a single metric over a range). */
+function computePart(
   rows: readonly DemoSeedRow[],
   currency: CurrencyCode,
   derivation: Derivation,
-): GroundTruth {
+): GroundTruthPart {
   const { metric, dateFrom, dateTo, category } = derivation;
   const amounts = toAmountRows(rows, dateFrom, dateTo);
 
@@ -76,11 +76,31 @@ export function computeGroundTruth(
       }
       return { kind: "text", contains: [top.category] };
     }
+    default:
+      throw new Error(`computePart: not a part metric: ${String(metric)}`);
+  }
+}
+
+/** Recompute a case's expected ground truth from its account's seed rows. */
+export function computeGroundTruth(
+  rows: readonly DemoSeedRow[],
+  currency: CurrencyCode,
+  derivation: Derivation,
+): GroundTruth {
+  switch (derivation.metric) {
     case "none":
       return { kind: "refusal" };
-    default: {
-      const exhaustive: never = metric;
-      throw new Error(`unhandled derivation metric: ${String(exhaustive)}`);
+    case "compound": {
+      // Make an empty `all` unrepresentable here (it would pass any answer), not
+      // merely impossible to commit via the schema's `min(2)`.
+      const parts = derivation.parts;
+      if (parts === undefined || parts.length < 2) {
+        throw new Error("a compound derivation requires at least 2 parts");
+      }
+      return { kind: "all", parts: parts.map((part) => computePart(rows, currency, part)) };
     }
+    default:
+      // The remaining metrics are part metrics; computePart throws on anything else.
+      return computePart(rows, currency, derivation);
   }
 }

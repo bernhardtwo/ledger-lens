@@ -43,16 +43,35 @@ export interface DemoAccountSeed {
 const [USD_ACCOUNT, EUR_ACCOUNT] = SEED_ACCOUNTS;
 
 /**
- * The committed demo world. Round figures and an out-of-month payroll (so "net in
- * May" ≠ "net all-time") keep the golden ground truth easy to read and verify. The
- * EUR account uses **distinct magnitudes** from the USD account, so any account
- * scope leak in the agent would change a figure the evals assert.
+ * The committed demo world. Spans **April, May and June 2026** so date-range
+ * questions (a single month, a quarter, a partial range straddling a month
+ * boundary) are discriminating, and includes a few **large odd-cents figures**
+ * (e.g. the June bonus `15,175.43`) as a deliberate decimal-path regression probe.
+ * **May is kept unchanged** so the original golden cases stay stable; only
+ * all-time figures shift (recomputed by the consistency test). The EUR account
+ * uses **distinct magnitudes** from the USD account, so any account scope leak in
+ * the agent would change a figure the evals assert.
  */
 export const DEMO_SEED: readonly DemoAccountSeed[] = [
   {
     account: USD_ACCOUNT,
     rows: [
-      // April payroll — only counted by all-time questions, not "in May".
+      // April — gives "April"/"Q2"/partial-range questions a distinct answer from May.
+      {
+        date: "2026-04-15",
+        description: "CITY APARTMENTS RENT",
+        direction: "debit",
+        amountMinor: 200000n,
+        category: "housing",
+      },
+      {
+        date: "2026-04-20",
+        description: "WHOLE FOODS",
+        direction: "debit",
+        amountMinor: 15000n,
+        category: "groceries",
+      },
+      // April payroll — only counted by all-time / Q2 questions, not "in May".
       {
         date: "2026-04-28",
         description: "ACME PAYROLL",
@@ -145,11 +164,49 @@ export const DEMO_SEED: readonly DemoAccountSeed[] = [
         amountMinor: 3000n,
         category: "health",
       },
+      // June — a month-boundary payroll (06-01), a category that appears ONLY in
+      // June (travel), and a large odd-cents bonus (decimal-path probe).
+      {
+        date: "2026-06-01",
+        description: "ACME PAYROLL",
+        direction: "credit",
+        amountMinor: 500000n,
+        category: "income",
+      },
+      {
+        date: "2026-06-05",
+        description: "DELTA AIRLINES",
+        direction: "debit",
+        amountMinor: 145000n,
+        category: "travel",
+      },
+      {
+        date: "2026-06-15",
+        description: "BEST BUY",
+        direction: "debit",
+        amountMinor: 89900n,
+        category: "shopping",
+      },
+      {
+        date: "2026-06-20",
+        description: "ANNUAL BONUS",
+        direction: "credit",
+        amountMinor: 1517543n,
+        category: "income",
+      },
     ],
   },
   {
     account: EUR_ACCOUNT,
     rows: [
+      // April income — lets EUR Q2 (Apr–Jun) differ from May.
+      {
+        date: "2026-04-25",
+        description: "NOMINA EMPRESA SL",
+        direction: "credit",
+        amountMinor: 300000n,
+        category: "income",
+      },
       {
         date: "2026-05-02",
         description: "NOMINA EMPRESA SL",
@@ -205,6 +262,14 @@ export const DEMO_SEED: readonly DemoAccountSeed[] = [
         direction: "debit",
         amountMinor: 7000n,
         category: "utilities",
+      },
+      // June — a single debit (travel), so EUR June/Q2 ranges are non-trivial.
+      {
+        date: "2026-06-08",
+        description: "IBERIA",
+        direction: "debit",
+        amountMinor: 120000n,
+        category: "travel",
       },
     ],
   },

@@ -27,6 +27,22 @@ describe("buildJudgePrompt", () => {
     });
     expect(user.toLowerCase()).toContain("declines");
   });
+
+  it("describes a compound (all) ground truth as requiring every part", () => {
+    const { user } = buildJudgePrompt({
+      question: "Net and top category?",
+      answer: "Net $2,504.02, top category housing.",
+      groundTruth: {
+        kind: "all",
+        parts: [
+          { kind: "figure", money: { amount: "250402", currency: "USD", minorUnitExponent: 2 } },
+          { kind: "text", contains: ["housing"] },
+        ],
+      },
+    });
+    expect(user).toContain("ALL of");
+    expect(user).toContain("housing");
+  });
 });
 
 describe("parseJudgeVerdict", () => {
