@@ -38,5 +38,7 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
 
-      # Phase 5 will add an "eval gate" step here that fails the build
-      # if prompt/agent accuracy regresses or token cost rises.
+      # The Phase 5 "eval gate" deliberately lives in a SEPARATE workflow
+      # (eval.yml, manual + weekly), not here: it runs the real agent and spends
+      # API tokens, so it must not run on every push/PR. These per-commit gates
+      # stay deterministic, Docker-only and offline.

@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "eval": "pnpm --filter @ledger-lens/api eval",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "prepare": "husky"
   },

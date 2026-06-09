@@ -28,6 +28,9 @@ Thumbs.db
 # test / coverage
 coverage/
 
+# eval harness output (Phase 5) — generated reports, not committed
+packages/evals/reports/
+
 # claude
 .claude/agent-memory/
 .claude/settings.local.json

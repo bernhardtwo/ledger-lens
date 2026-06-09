@@ -19,6 +19,12 @@ export interface QaAnswer {
   readonly model: string;
   /** Agentic turns taken (for the response `meta`). */
   readonly turns: number;
+  /**
+   * Run cost in USD. Logged server-side and **never** returned in the HTTP
+   * response (ADR-0008 §6); surfaced here only so the Phase 5 eval report can
+   * record per-question cost. Optional: the scripted test double omits it.
+   */
+  readonly costUsd?: number;
 }
 
 /** The agent seam. The only thing that orchestrates the LLM; mocked in every test. */

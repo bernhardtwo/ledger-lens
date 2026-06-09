@@ -41,6 +41,9 @@ importers:
       '@ledger-lens/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ledger-lens/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@ledger-lens/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
@@ -133,7 +136,24 @@ importers:
         specifier: ^4.19.2
         version: 4.22.4
 
-  packages/evals: {}
+  packages/evals:
+    dependencies:
+      '@ledger-lens/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ledger-lens/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@ledger-lens/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.20
 
   packages/mcp-server:
     dependencies:

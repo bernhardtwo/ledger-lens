@@ -1,0 +1,81 @@
+name: Eval
+
+# The eval gate runs the REAL Q&A agent against the golden dataset, so it spends
+# API tokens. It is therefore NOT on push/PR (see ci.yml for the per-commit gates)
+# — only manual dispatch and a weekly schedule, against the spend-limited
+# workspace via the ANTHROPIC_API_KEY secret.
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Comma-separated models (blank = ANTHROPIC_AGENT_MODEL / claude-haiku-4-5)"
+        required: false
+        default: ""
+      judge:
+        description: "Also run the LLM-as-judge (reported only, never gating)"
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ledgerlens
+          POSTGRES_PASSWORD: ledgerlens
+          POSTGRES_DB: ledgerlens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ledgerlens"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The runner migrates + seeds this DB itself; the agent's MCP child inherits it.
+      DATABASE_URL: postgresql://ledgerlens:ledgerlens@localhost:5432/ledgerlens
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Exits non-zero (failing the job = the "eval gate") if the primary model
+      # misses the gating thresholds (tool-selection + answer >= 0.9).
+      - name: Run evals
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.models }}" ]; then
+            ARGS="$ARGS --models ${{ github.event.inputs.models }}"
+          fi
+          if [ "${{ github.event.inputs.judge }}" = "true" ]; then
+            ARGS="$ARGS --judge"
+          fi
+          pnpm --filter @ledger-lens/api eval -- $ARGS
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: packages/evals/reports/
+          if-no-files-found: warn

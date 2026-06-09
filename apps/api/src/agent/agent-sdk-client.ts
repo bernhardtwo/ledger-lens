@@ -70,10 +70,13 @@ export class AgentSdkQaAgent implements QaAgent {
 
     const { answer, turns } = extractAnswer(messages);
     const toolCalls = extractToolCalls(messages);
-    // Cost/usage are logged server-side only — never returned to the client.
+    const costUsd = totalCostUsd(messages);
+    // Cost/usage are logged server-side only — never returned to the client. The
+    // `costUsd` on the result is for the eval report, not the HTTP response (which
+    // maps only answer/toolCalls/meta).
     this.logger.log(
-      `ask account=${accountId} model=${this.runtime.model} turns=${turns} tools=${toolCalls.length} cost_usd=${totalCostUsd(messages).toFixed(6)}`,
+      `ask account=${accountId} model=${this.runtime.model} turns=${turns} tools=${toolCalls.length} cost_usd=${costUsd.toFixed(6)}`,
     );
-    return { answer, toolCalls, model: this.runtime.model, turns };
+    return { answer, toolCalls, model: this.runtime.model, turns, costUsd };
   }
 }

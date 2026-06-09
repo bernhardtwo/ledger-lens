@@ -1,14 +1,40 @@
 # @ledger-lens/evals
 
-Evaluation harness (Phase 5) — the project's biggest differentiator.
+Evaluation harness (Phase 5) — the project's differentiator. See ADR-0009 /
+spec 0005.
 
-Will contain golden datasets and regression tests for:
-- prompts (extraction / categorisation accuracy)
-- agent behaviour (correct tools, correct order)
-- tool use (argument / output validation)
-- grounding / hallucination checks
-- cost & latency tracking
+It runs the **real** Q&A agent against a fixed, committed golden dataset and
+scores its answers, so it **costs API tokens** — it is a separate command
+(`pnpm eval`) and a manual/scheduled CI job, **never** part of `pnpm check` /
+`pnpm test` / `test:integration`.
 
-A CI "eval gate" fails the build on accuracy regression or cost increase.
+## What lives here (pure, app-independent, unit-tested with mocked agent output)
 
-> Placeholder in Phase 0.
+- **`dataset.ts`** — the golden cases (`question → expected tool(s) + ground
+  truth`), a Zod schema, and `loadDataset()`. Ground truth is **committed** and
+  verified against the seed by a unit test (`computeGroundTruth` in
+  `ground-truth.ts`), so it can't silently drift.
+- **`money-match.ts`** — deterministic money-token matching (the crux).
+- **`scoring.ts`** — the four metrics: tool-selection + answer (**gating**),
+  faithfulness + scope (reported).
+- **`report.ts`** — JSON + Markdown report builders and model comparison.
+- **`judge.ts`** — optional LLM-as-judge prompt/parse helpers (reported only).
+- **`runner.ts`** — the `AgentRunner` port the real runner implements.
+
+The executable that wires the real agent + DB lives in **`apps/api`**
+(`pnpm eval`), because a package must not depend on an app (ADR-0007). This
+package never imports `apps/api` and never calls the real API.
+
+## v1 scope
+
+v1 evaluates the **Q&A agent**. The harness core is **feature-agnostic**, so the
+Phase 2 categoriser scorer drops in as a new dataset + scorer in v1.1.
+
+## Running
+
+```bash
+docker compose up -d postgres
+pnpm --filter @ledger-lens/db db:migrate   # schema
+pnpm eval                                  # migrates + seeds + runs (needs ANTHROPIC_API_KEY)
+pnpm eval -- --models claude-haiku-4-5,claude-sonnet-4-6 --judge
+```
