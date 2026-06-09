@@ -80,6 +80,13 @@ tool result**; **never** add/subtract/average/estimate/guess a number; prefer th
 tools don't cover the question, say so plainly; report money exactly as the tools
 return it.
 
+**Money decimals (added Phase 5, ADR-0008 §4a):** the prompt directs the model to
+report each money value's `decimal` field (the exact human amount, e.g.
+`"7504.02"`) with the currency, and to **never** convert the minor-unit `amount`
+itself — no ÷100, no decimal-point moves. The Phase 5 eval caught the agent doing
+that placement itself and mis-rendering large figures; the real fix is the tools'
+deterministic `decimal` (spec 0003), with this prompt rule as belt-and-suspenders.
+
 ## Module layout & the port seam
 
 - **`apps/api/src/agent/`** (SDK-coupled only in the adapter):

@@ -181,7 +181,11 @@ response mapping is unchanged and still never returns cost to the client
   from the seed; faithfulness measured by re-execution against the real tool math
   (no agent change); model comparison on demand to drive the Haiku→Sonnet
   decision with data; a structured report feeding the Phase 8 write-up; the
-  harness core fully unit-tested offline with no real API in any suite.
+  harness core fully unit-tested offline with no real API in any suite. **It
+  already earned its keep:** the first clean run caught a determinism-first
+  violation — the agent doing the ÷100 minor-unit→decimal placement itself and
+  mis-rendering large figures — fixed architecturally in ADR-0007 §2a / ADR-0008
+  §4a (the tools now emit a deterministic `decimal`).
 - **Negative (accepted):** the real-agent eval is token-spending and lives outside
   the per-commit gates (manual/scheduled only); it now requires **Docker** when run
   (it provisions its own Postgres), as the integration suite already does; a small

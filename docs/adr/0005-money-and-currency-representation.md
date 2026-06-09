@@ -77,6 +77,13 @@ export const MoneySchema = z.object({
 a `currency` text column constrained to ISO-4217. Display formatting (inserting
 the decimal point, locale, symbol) happens only at the presentation edge.
 
+> **Note (Phase 5):** `MoneyDTO` stays minimal — minor units only. The canonical
+> human decimal is produced by `toDecimalString` and lives **at presentation
+> boundaries**, not in the DTO. The MCP tool surface (ADR-0007 §2a) carries such a
+> deterministic `decimal` alongside the `MoneyDTO` so the **agent relays it and
+> never does the ÷100 decimal placement itself** (that placement is money math, so
+> it must be deterministic code per ADR-0004). The DTO contract is unchanged.
+
 ## Alternatives considered
 
 - **Floating point (`number`)** — simplest, but inexact for decimals. Rejected

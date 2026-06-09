@@ -91,6 +91,17 @@ even the sign stays deterministic. Honest framing: prompt rules are best-effort;
 the hard guarantee is the deterministic tools + the scope guard. Adherence quality
 is measured by the Phase 5 evals, not asserted here.
 
+**4a. Money decimals come from the tool, not the agent (added Phase 5).** The
+Phase 5 eval caught a determinism-first violation here: given money as minor-unit
+integers, the agent did the ÷100 decimal placement *itself* and mis-rendered large
+magnitudes (net `750402` → "$750,402.00" instead of "$7,504.02"), worst on Haiku.
+Decimal placement is money math, so the fix is architectural, not just a prompt
+tweak: the MCP tools now emit a deterministic `decimal` field (ADR-0007 §2a) and
+the prompt directs the agent to **relay `decimal` verbatim** with the currency and
+**never convert minor units** (no ÷100, no decimal-point moves). The eval surfacing
+this — and the figure pass-rate recovering after the fix, disproportionately for
+Haiku — is exactly the determinism-first signal Phase 5 exists to provide.
+
 **5. Model + cost, parametrized.** New env vars (separate from categorization):
 `ANTHROPIC_AGENT_MODEL` (default `claude-haiku-4-5`), `ANTHROPIC_AGENT_MAX_TURNS`
 (default `8`), `ANTHROPIC_AGENT_MAX_BUDGET_USD` (default `0.15`, a cheap

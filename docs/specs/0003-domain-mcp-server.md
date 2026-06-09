@@ -27,7 +27,9 @@ this phase: the tools do all data access + money aggregation. Packaged as
 ## Tool surface (read-only)
 
 Each tool has a Zod input schema and a typed output (`structuredContent` + a short
-text rendering). Money is always a `MoneyDTO` (string minor units + currency).
+text rendering). Money is always a `MoneyDTO` (string minor units + currency),
+augmented at the tool surface with a deterministic `decimal` string (Phase 5 — see
+Money semantics below).
 
 | Tool | Input | Output |
 |---|---|---|
@@ -51,6 +53,11 @@ text rendering). Money is always a `MoneyDTO` (string minor units + currency).
   folding in credits would conflate refunds/income). A debit with `category = NULL`
   (not yet categorised) buckets under `uncategorized`.
 - No `bigint`/float ever leaves a tool — only `MoneyDTO`.
+- **Tool money carries a `decimal` (Phase 5, ADR-0007 §2a):** every money value is
+  a `MoneyDTO` **plus** a `decimal` — the exact human amount via the shared
+  `toDecimalString` (e.g. `750402` → `"7504.02"`) — so the agent relays it and
+  never does the ÷100 decimal placement itself (the Phase 5 eval caught the agent
+  mis-rendering minor units). `MoneyDTO`/ADR-0005 and the HTTP API are unchanged.
 
 ## Repository reuse (no duplication, no LLM)
 

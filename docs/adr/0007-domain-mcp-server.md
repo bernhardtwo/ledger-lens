@@ -40,6 +40,21 @@ never hit a mixed currency. `net` is a `{ direction, amount }` pair (Money is a
 non-negative magnitude, so a negative net is impossible). All money serialises as
 `MoneyDTO` (string minor units + currency); **no `bigint`/float on the wire**.
 
+**2a. Tool money also carries a deterministic `decimal` (added Phase 5).** Every
+money value the tools return is a `MoneyDTO` **plus** a `decimal` string — the
+exact human amount rendered by the shared `toDecimalString` (e.g. minor units
+`750402` → `"7504.02"`). This exists because the Phase 5 eval caught a
+determinism-first violation: handed only minor units, the agent did the ÷100
+decimal placement *itself* and mis-rendered large magnitudes (`750402` →
+`"$750,402.00"`). Decimal placement is money math, so it must be deterministic
+code (ADR-0004): the tool formats once via `toDecimalString`, the agent **relays**
+`decimal` and never converts. The raw minor-unit fields stay for fidelity. This is
+a **presentation field on the agent-facing tool surface only** — `MoneyDTO` and
+ADR-0005 are unchanged, and the HTTP API (not an LLM surface) still returns the
+plain `MoneyDTO`. Implemented as `ToolMoneySchema = MoneyDTO ∩ { decimal }` via a
+`withDecimal` helper; the pure aggregation folds are untouched (so the Phase 5
+ground-truth/consistency test needs no change, and the fix cannot game the eval).
+
 **3. Aggregation is an in-process pure fold, not SQL.** Totals are folded in
 TypeScript over the fetched rows using the shared `Money` value object. This keeps
 the money boundary visible, reuses the audited arithmetic, and is unit-testable
