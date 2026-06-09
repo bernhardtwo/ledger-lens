@@ -14,3 +14,4 @@ export * from "./accounts.repository.js";
 export * from "./categorization.repository.js";
 export * from "./migrate.js";
 export * from "./seed.js";
+export * from "./demo-seed.js";

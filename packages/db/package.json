@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=../../.env --import tsx ./src/migrate.ts",
-    "db:seed": "node --env-file=../../.env --import tsx ./src/seed.ts"
+    "db:seed": "node --env-file=../../.env --import tsx ./src/seed.ts",
+    "db:seed:demo": "node --env-file=../../.env --import tsx ./src/demo-seed.ts"
   },
   "dependencies": {
     "@ledger-lens/shared": "workspace:*",
