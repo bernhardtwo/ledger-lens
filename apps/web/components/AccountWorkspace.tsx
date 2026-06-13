@@ -40,7 +40,10 @@ export function AccountWorkspace({ accountId }: { accountId: string }) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <Link href="/" className="text-sm text-zinc-500 transition-colors hover:text-zinc-800">
+      <Link
+        href="/"
+        className="rounded text-sm text-zinc-500 transition-colors hover:text-zinc-800 focus-visible:text-zinc-800 focus-visible:underline focus-visible:outline-none"
+      >
         ← Accounts
       </Link>
       <header className="mt-3 mb-10 flex items-center gap-3">

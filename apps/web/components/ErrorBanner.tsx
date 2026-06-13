@@ -8,7 +8,7 @@ export function ErrorBanner({
 }: {
   title: string;
   children?: ReactNode;
-  className?: string;
+  className?: string | undefined;
 }) {
   return (
     <div

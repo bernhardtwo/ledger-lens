@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { type ApiError, listAccounts, toApiError } from "../lib/api";
 import type { Account } from "../lib/contracts";
+import { ApiErrorBanner } from "./ApiErrorBanner";
 import { Badge } from "./Badge";
+import { buttonClassName } from "./Button";
 import { Card } from "./Card";
-import { ErrorBanner } from "./ErrorBanner";
-import { Spinner } from "./Spinner";
+import { EmptyState, Loading } from "./States";
 
 type State =
   | { status: "loading" }
@@ -40,26 +41,15 @@ export function AccountPicker() {
   }, []);
 
   if (state.status === "loading") {
-    return (
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Spinner /> Loading accounts…
-      </div>
-    );
+    return <Loading label="Loading accounts…" />;
   }
 
   if (state.status === "error") {
-    const unreachable = state.error.status === 0;
-    return (
-      <ErrorBanner
-        title={unreachable ? "API unreachable" : `Couldn't load accounts (${state.error.status})`}
-      >
-        {unreachable ? "Is the API running on the configured API_BASE_URL?" : state.error.message}
-      </ErrorBanner>
-    );
+    return <ApiErrorBanner error={state.error} fallbackTitle="Couldn't load accounts" />;
   }
 
   if (state.accounts.length === 0) {
-    return <p className="text-sm text-zinc-500">No accounts found.</p>;
+    return <EmptyState>No demo accounts found.</EmptyState>;
   }
 
   return (
@@ -73,10 +63,7 @@ export function AccountPicker() {
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <Badge tone="neutral">{account.currency}</Badge>
-              <Link
-                href={`/accounts/${account.id}`}
-                className="inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
-              >
+              <Link href={`/accounts/${account.id}`} className={buttonClassName("ghost")}>
                 Open →
               </Link>
             </div>

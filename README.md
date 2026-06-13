@@ -30,14 +30,13 @@ Actions.
 
 ```
 apps/api            NestJS backbone + Agent SDK orchestrator + categorisation
+apps/web            Next.js frontend (streaming agent chat, transactions, upload)
 packages/shared     shared domain types & Zod schemas (Money, taxonomy)
 packages/db         Drizzle schema, migrations, repository
 packages/mcp-server domain MCP server (read-only tools)
+packages/evals      eval harness + golden datasets
 docs/adr            architecture decision records
 docs/specs          feature specs (written before code)
-
-apps/web            Next.js frontend             (planned, Phase 6)
-packages/evals      eval harness + golden data   (planned, Phase 5)
 ```
 
 ## Getting started
@@ -67,9 +66,15 @@ This repo is built in phases; each is a meaningful, reviewable increment.
   shared `@ledger-lens/db` package (stdio transport).
 - **Phase 4 — done.** Agentic Q&A orchestration: Agent SDK + Haiku,
   MCP-over-stdio, code-enforced account scoping.
-- Phase 5 — eval harness + CI eval gate.
-- Phase 6 — Next.js frontend with streaming agent UI.
-- Phase 7 — Docker + Azure deploy + observability.
+- **Phase 5 — done.** Eval harness + golden datasets over an ephemeral Postgres
+  (testcontainers). The model is locked to Haiku as the cost-justified default. It
+  runs the real agent, so it spends tokens — a manual/scheduled job, never part of
+  `pnpm check`.
+- **Phase 6 — done.** Next.js (App Router) frontend: account picker, CSV upload,
+  keyset transactions table, one-click categorisation, and a streaming chat that
+  renders the agent's tool calls live over SSE ([ADR-0010](docs/adr/0010-streaming-agent-events-over-sse.md)).
+  Determinism-first holds at the presentation boundary — the UI computes no money.
+- Phase 7 — Docker + Azure (Container Apps) deploy + observability.
 - Phase 8 — polish: ADR writeups, demo, eval report.
 
 ## AI-native workflow

@@ -5,11 +5,11 @@ import { type ApiError, listTransactions, toApiError } from "../lib/api";
 import type { TransactionListItemResponse } from "../lib/contracts";
 import { Money } from "../lib/money";
 import { directionTone } from "../lib/money-format";
+import { ApiErrorBanner } from "./ApiErrorBanner";
 import { Badge } from "./Badge";
 import { Button } from "./Button";
 import { Card } from "./Card";
-import { ErrorBanner } from "./ErrorBanner";
-import { Spinner } from "./Spinner";
+import { EmptyState, Loading } from "./States";
 import { Table, Td, Th } from "./Table";
 
 type Status = "loading" | "ready" | "loading-more" | "error";
@@ -79,66 +79,60 @@ export function TransactionsTable({ accountId }: { accountId: string }) {
   }, [accountId, cursor, status]);
 
   if (status === "loading") {
-    return (
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Spinner /> Loading transactions…
-      </div>
-    );
+    return <Loading label="Loading transactions…" />;
   }
 
-  if (status === "error" && rows.length === 0) {
-    return <ErrorBanner title="Couldn't load transactions">{error?.message}</ErrorBanner>;
+  if (status === "error" && rows.length === 0 && error !== null) {
+    return <ApiErrorBanner error={error} fallbackTitle="Couldn't load transactions" />;
   }
 
   if (rows.length === 0) {
-    return (
-      <Card className="px-5 py-10 text-center text-sm text-zinc-500">
-        No transactions yet. Upload a CSV statement to get started.
-      </Card>
-    );
+    return <EmptyState>No transactions yet. Upload a CSV statement to get started.</EmptyState>;
   }
 
   return (
     <Card className="overflow-hidden">
-      <Table>
-        <thead>
-          <tr>
-            <Th>Date</Th>
-            <Th>Description</Th>
-            <Th>Category</Th>
-            <Th>Direction</Th>
-            <Th className="text-right">Amount</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="hover:bg-zinc-50">
-              <Td>
-                <div className="font-medium text-zinc-900">{row.transactionDate}</div>
-                {row.postedDate ? (
-                  <div className="text-xs text-zinc-400">posted {row.postedDate}</div>
-                ) : null}
-              </Td>
-              <Td className="text-zinc-700">{row.description}</Td>
-              <Td>
-                {row.category ? (
-                  <Badge tone="neutral">{row.category}</Badge>
-                ) : (
-                  <Badge tone="warning">Uncategorized</Badge>
-                )}
-              </Td>
-              <Td>
-                <span className={directionTone(row.direction)}>
-                  {row.direction === "credit" ? "in" : "out"}
-                </span>
-              </Td>
-              <Td className="text-right">
-                <Money amount={row.amount} direction={row.direction} />
-              </Td>
+      <div className="overflow-x-auto">
+        <Table>
+          <thead>
+            <tr>
+              <Th>Date</Th>
+              <Th>Description</Th>
+              <Th>Category</Th>
+              <Th>Direction</Th>
+              <Th className="text-right">Amount</Th>
             </tr>
-          ))}
-        </tbody>
-      </Table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="hover:bg-zinc-50">
+                <Td>
+                  <div className="font-medium text-zinc-900">{row.transactionDate}</div>
+                  {row.postedDate ? (
+                    <div className="text-xs text-zinc-400">posted {row.postedDate}</div>
+                  ) : null}
+                </Td>
+                <Td className="text-zinc-700">{row.description}</Td>
+                <Td>
+                  {row.category ? (
+                    <Badge tone="neutral">{row.category}</Badge>
+                  ) : (
+                    <Badge tone="warning">Uncategorized</Badge>
+                  )}
+                </Td>
+                <Td>
+                  <span className={directionTone(row.direction)}>
+                    {row.direction === "credit" ? "in" : "out"}
+                  </span>
+                </Td>
+                <Td className="text-right">
+                  <Money amount={row.amount} direction={row.direction} />
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
       <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-4 py-3">
         <span className="text-xs text-zinc-400">{rows.length} shown</span>
         <div className="flex items-center gap-3">

@@ -18,7 +18,8 @@ export default function HomePage() {
       </section>
 
       <footer className="mt-12 text-xs text-zinc-400">
-        Phase 6 · upload, transactions and chat arrive in Chunk C.
+        Synthetic data only. Open an account to import a statement, categorize it, and ask the agent
+        about your finances.
       </footer>
     </main>
   );

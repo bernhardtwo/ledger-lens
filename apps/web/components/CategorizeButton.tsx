@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { type ApiError, categorizeAccount, toApiError } from "../lib/api";
 import type { CategorizeResponse } from "../lib/contracts";
+import { ApiErrorBanner } from "./ApiErrorBanner";
 import { Button } from "./Button";
-import { ErrorBanner } from "./ErrorBanner";
 
 type State =
   | { status: "idle" }
@@ -54,9 +54,11 @@ export function CategorizeButton({
         <span className="text-sm text-zinc-600">{describeResult(state.result)}</span>
       ) : null}
       {state.status === "error" ? (
-        <ErrorBanner title="Couldn't categorize" className="w-full">
-          {state.error.message}
-        </ErrorBanner>
+        <ApiErrorBanner
+          error={state.error}
+          fallbackTitle="Couldn't categorize"
+          className="w-full"
+        />
       ) : null}
     </div>
   );

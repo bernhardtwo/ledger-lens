@@ -3,39 +3,15 @@
 import { type FormEvent, useRef, useState } from "react";
 import { type ApiError, toApiError, uploadStatement } from "../lib/api";
 import type { StatementIngestResponse } from "../lib/contracts";
+import { ApiErrorBanner } from "./ApiErrorBanner";
 import { Button } from "./Button";
 import { Card } from "./Card";
-import { ErrorBanner } from "./ErrorBanner";
 
 type State =
   | { status: "idle" }
   | { status: "uploading" }
   | { status: "done"; result: StatementIngestResponse }
   | { status: "error"; error: ApiError };
-
-/** Map the API's real error codes to a user-facing message (see spec 0006 §5). */
-function describeError(error: ApiError): { title: string; detail: string } {
-  if (error.status === 413) {
-    return { title: "File too large", detail: "Statements must be 5 MB or smaller." };
-  }
-  if (error.status === 415) {
-    return { title: "Unsupported file", detail: "Only CSV files are accepted." };
-  }
-  if (error.status === 422 && error.code === "unknown-profile") {
-    return {
-      title: "Unrecognized CSV format",
-      detail: error.signature ? `Couldn't match these columns: ${error.signature}` : error.message,
-    };
-  }
-  if (error.status === 422) {
-    // currency-mismatch / too-many-rejected — the API message is already specific.
-    return { title: "Couldn't process the file", detail: error.message };
-  }
-  if (error.status === 0) {
-    return { title: "API unreachable", detail: "Is the API running?" };
-  }
-  return { title: "Upload failed", detail: error.message };
-}
 
 export function UploadPanel({
   accountId,
@@ -78,14 +54,11 @@ export function UploadPanel({
       </form>
 
       {state.status === "done" ? <UploadResult result={state.result} /> : null}
-      {state.status === "error" ? <UploadError error={state.error} /> : null}
+      {state.status === "error" ? (
+        <ApiErrorBanner error={state.error} fallbackTitle="Upload failed" />
+      ) : null}
     </div>
   );
-}
-
-function UploadError({ error }: { error: ApiError }) {
-  const { title, detail } = describeError(error);
-  return <ErrorBanner title={title}>{detail}</ErrorBanner>;
 }
 
 function UploadResult({ result }: { result: StatementIngestResponse }) {
