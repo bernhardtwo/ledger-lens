@@ -31,6 +31,9 @@ coverage/
 # eval harness output (Phase 5) — generated reports, not committed
 packages/evals/reports/
 
+# playwright mcp (browser-verification scratch)
+.playwright-mcp/
+
 # claude
 .claude/agent-memory/
 .claude/settings.local.json

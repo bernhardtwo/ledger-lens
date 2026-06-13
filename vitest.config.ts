@@ -2,7 +2,9 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["packages/**/*.{test,spec}.ts", "apps/**/*.{test,spec}.ts"],
+    // `.tsx` is included so future React component tests are collected, not silently
+    // skipped; jsdom/RTL infra lands with the Chunk C component-render tests.
+    include: ["packages/**/*.{test,spec}.{ts,tsx}", "apps/**/*.{test,spec}.{ts,tsx}"],
     // Integration tests (*.itest.ts) need Docker; they run via the separate
     // vitest.integration.config.ts (`pnpm test:integration`), not here.
     exclude: [...configDefaults.exclude, "**/*.itest.ts"],
