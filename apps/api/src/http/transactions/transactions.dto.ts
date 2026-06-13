@@ -1,11 +1,18 @@
 import type { TransactionListRow } from "@ledger-lens/db";
-import { CategorySchema, TransactionListItemSchema, money, toMoneyDTO } from "@ledger-lens/shared";
+import {
+  TransactionListItemResponseSchema,
+  type TransactionsPageResponse,
+  TransactionsPageResponseSchema,
+  money,
+  toMoneyDTO,
+} from "@ledger-lens/shared";
 import { z } from "zod";
 
-/** List item enriched with its category (Phase 2): `null` until categorized. */
-export const TransactionListItemResponseSchema = TransactionListItemSchema.extend({
-  category: CategorySchema.nullable(),
-});
+// The response envelopes now live in `@ledger-lens/shared` (spec 0006) so the
+// client validates the identical schema; re-exported here so existing imports
+// (controller, service) keep resolving unchanged.
+export { TransactionListItemResponseSchema, TransactionsPageResponseSchema };
+export type { TransactionsPageResponse };
 
 /** Query of `GET /accounts/:accountId/transactions`. `limit` is coerced + clamped. */
 export const ListQuerySchema = z.object({
@@ -19,19 +26,11 @@ export const ListQuerySchema = z.object({
 
 export type ListQuery = z.infer<typeof ListQuerySchema>;
 
-/** Response: the list projection (no `rawRow`) + an opaque next-page cursor. */
-export const TransactionsPageResponseSchema = z.object({
-  items: z.array(TransactionListItemResponseSchema),
-  nextCursor: z.string().nullable(),
-});
-
-export type TransactionsPageResponse = z.infer<typeof TransactionsPageResponseSchema>;
-
 /**
  * Map a DB list row to the canonical transaction DTO, reconstructing `amount` as a
  * `MoneyDTO` (string minor units) via the shared `money`/`toMoneyDTO` — no money
  * logic is reimplemented here, and no `bigint` reaches JSON. Returns the schema's
- * INPUT shape; the controller validates it through `TransactionListItemSchema`.
+ * INPUT shape; the controller validates it through `TransactionListItemResponseSchema`.
  */
 export function toTransactionListItem(
   row: TransactionListRow,

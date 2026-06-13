@@ -26,3 +26,11 @@ export * from "./domain/statement.js";
 export * from "./domain/transaction.js";
 // Enrichment (Phase 2): the closed category taxonomy assigned by the LLM.
 export * from "./domain/category.js";
+
+// API response envelopes (Phase 6, spec 0006). Lifted out of `apps/api` so the
+// server's response-validation pipe and the web client validate against the
+// identical Zod symbol — one contract, no drift.
+export * from "./api/transactions.js";
+export * from "./api/ask.js";
+export * from "./api/statements.js";
+export * from "./api/categorization.js";
