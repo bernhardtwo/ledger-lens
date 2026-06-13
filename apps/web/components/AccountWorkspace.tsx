@@ -6,6 +6,7 @@ import { listAccounts } from "../lib/api";
 import type { Account } from "../lib/contracts";
 import { Badge } from "./Badge";
 import { CategorizeButton } from "./CategorizeButton";
+import { Chat } from "./Chat";
 import { TransactionsTable } from "./TransactionsTable";
 import { UploadPanel } from "./UploadPanel";
 
@@ -50,6 +51,11 @@ export function AccountWorkspace({ accountId }: { accountId: string }) {
       </header>
 
       <div className="space-y-10">
+        <section aria-label="Ask">
+          <h2 className={SECTION_HEADING}>Ask</h2>
+          <Chat key={accountId} accountId={accountId} />
+        </section>
+
         <section aria-label="Import a statement">
           <h2 className={SECTION_HEADING}>Import a statement</h2>
           <UploadPanel accountId={accountId} onUploaded={refresh} />
