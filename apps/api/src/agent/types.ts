@@ -5,6 +5,8 @@
  * API through this interface.
  */
 
+import type { AgentEvent } from "@ledger-lens/shared";
+
 /** One tool the agent invoked, with the domain (prefix-stripped) name + its input. */
 export interface ToolCall {
   readonly tool: string;
@@ -30,6 +32,20 @@ export interface QaAnswer {
 /** The agent seam. The only thing that orchestrates the LLM; mocked in every test. */
 export interface QaAgent {
   ask(input: { readonly accountId: string; readonly question: string }): Promise<QaAnswer>;
+}
+
+/**
+ * The streaming counterpart (ADR-0010): the live `AgentEvent` sequence the SSE
+ * endpoint relays. The production adapter implements both this and `QaAgent` over
+ * the same `query()` loop; `ask()` is a fold over the same event mapper. Mocked by
+ * the same scripted double.
+ */
+export interface StreamingQaAgent {
+  askStream(
+    input: { readonly accountId: string; readonly question: string },
+    /** Optional: aborts the agent loop when the client disconnects (ADR-0010). */
+    controller?: AbortController,
+  ): AsyncIterable<AgentEvent>;
 }
 
 /**

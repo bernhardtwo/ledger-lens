@@ -34,3 +34,6 @@ export * from "./api/transactions.js";
 export * from "./api/ask.js";
 export * from "./api/statements.js";
 export * from "./api/categorization.js";
+export * from "./api/accounts.js";
+// Streaming Q&A wire contract (Phase 6, ADR-0010).
+export * from "./api/events.js";

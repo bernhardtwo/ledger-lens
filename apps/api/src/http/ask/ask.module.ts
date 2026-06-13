@@ -6,8 +6,9 @@ import {
   DEFAULT_MAX_BUDGET_USD,
   DEFAULT_MAX_TURNS,
 } from "../../agent/agent-sdk-client.js";
-import type { QaAgent } from "../../agent/types.js";
+import type { QaAgent, StreamingQaAgent } from "../../agent/types.js";
 import { DatabaseModule } from "../database/database.module.js";
+import { AskStreamService } from "./ask-stream.service.js";
 import { AskController } from "./ask.controller.js";
 import { AskService } from "./ask.service.js";
 import { QA_AGENT } from "./ask.tokens.js";
@@ -46,11 +47,13 @@ function runtimeConfig(): AgentRuntimeConfig {
   controllers: [AskController],
   providers: [
     AskService,
+    AskStreamService,
     {
-      // The adapter reads the API key lazily, so app boot needs none; tests
+      // One adapter instance implements both the JSON (`ask`) and SSE (`askStream`)
+      // seams; the adapter reads the API key lazily, so app boot needs none. Tests
       // override this token with a scripted double (no real API call anywhere).
       provide: QA_AGENT,
-      useFactory: (): QaAgent => new AgentSdkQaAgent(runtimeConfig()),
+      useFactory: (): QaAgent & StreamingQaAgent => new AgentSdkQaAgent(runtimeConfig()),
     },
   ],
 })

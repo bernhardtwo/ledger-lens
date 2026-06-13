@@ -8,6 +8,7 @@
     "start": "node --env-file=../../.env --import tsx ./src/http/main.ts",
     "smoke:categorize": "node --env-file=../../.env --import tsx ./src/categorization/smoke.ts",
     "smoke:ask": "node --env-file=../../.env --import tsx ./src/agent/smoke.ts",
+    "smoke:ask-stream": "node --env-file=../../.env --import tsx ./src/agent/smoke-stream.ts",
     "eval": "node --env-file-if-exists=../../.env --import tsx ./src/evals/run-eval.ts"
   },
   "dependencies": {

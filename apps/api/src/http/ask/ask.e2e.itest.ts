@@ -19,6 +19,9 @@ import {
   persistIngestion,
 } from "@ledger-lens/db";
 import {
+  AccountsResponseSchema,
+  type AgentEvent,
+  AgentEventSchema,
   type Category,
   type Direction,
   type Money,
@@ -36,7 +39,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { mcpServerLaunch } from "../../agent/mcp-launch.js";
 import { STEP_LIMIT_MESSAGE } from "../../agent/query.js";
 import { resolveToolCall, stripPrefix } from "../../agent/scope.js";
-import type { QaAgent, QaAnswer, ToolCall } from "../../agent/types.js";
+import { foldEvents } from "../../agent/stream.js";
+import type { QaAgent, QaAnswer, StreamingQaAgent, ToolCall } from "../../agent/types.js";
 import { AppModule } from "../app.module.js";
 import { DATABASE } from "../database/database.tokens.js";
 import { QA_AGENT } from "./ask.tokens.js";
@@ -56,7 +60,7 @@ interface Decision {
  * permission result is exercised only by the smoke; here we exercise the guard +
  * injection + the real tool/DB.)
  */
-class ScriptedQaAgent implements QaAgent {
+class ScriptedQaAgent implements QaAgent, StreamingQaAgent {
   decisions: Decision[] = [];
   phrase: (results: unknown[]) => string = () => "(no answer scripted)";
 
@@ -65,17 +69,23 @@ class ScriptedQaAgent implements QaAgent {
     private readonly maxToolCalls: number,
   ) {}
 
-  async ask({ accountId }: { accountId: string; question: string }): Promise<QaAnswer> {
+  // The streaming seam: canned decisions drive REAL tools over MCP, emitted as the
+  // AgentEvent sequence (tool_call -> tool_result{ok} -> ... -> answer -> done). The
+  // tool-call cap maps to a graceful done(step_limit), mirroring production.
+  async *askStream({
+    accountId,
+  }: { accountId: string; question: string }): AsyncGenerator<AgentEvent> {
     const toolCalls: ToolCall[] = [];
     const results: unknown[] = [];
     for (const decision of this.decisions) {
       if (toolCalls.length >= this.maxToolCalls) {
-        return {
-          answer: STEP_LIMIT_MESSAGE,
-          toolCalls,
-          model: "scripted",
-          turns: toolCalls.length,
+        yield { type: "answer", text: STEP_LIMIT_MESSAGE };
+        yield {
+          type: "done",
+          stopReason: "step_limit",
+          meta: { model: "scripted", turns: toolCalls.length },
         };
+        return;
       }
       const scope = resolveToolCall(accountId, decision.tool, decision.input);
       if (!scope.allowed) {
@@ -87,9 +97,24 @@ class ScriptedQaAgent implements QaAgent {
         arguments: scope.updatedInput,
       });
       results.push((res as { structuredContent?: unknown }).structuredContent);
-      toolCalls.push({ tool: stripPrefix(decision.tool), input: scope.updatedInput });
+      const tool = stripPrefix(decision.tool);
+      yield { type: "tool_call", tool, input: scope.updatedInput };
+      yield { type: "tool_result", tool, ok: true };
+      toolCalls.push({ tool, input: scope.updatedInput });
     }
-    return { answer: this.phrase(results), toolCalls, model: "scripted", turns: toolCalls.length };
+    yield { type: "answer", text: this.phrase(results) };
+    yield { type: "done", stopReason: "ok", meta: { model: "scripted", turns: toolCalls.length } };
+  }
+
+  // `/ask` is a fold over askStream — the SAME path production uses (ADR-0010), so
+  // one scripted source exercises both the JSON and SSE seams.
+  async ask(input: { accountId: string; question: string }): Promise<QaAnswer> {
+    const events: AgentEvent[] = [];
+    for await (const event of this.askStream(input)) {
+      events.push(event);
+    }
+    const { answer, toolCalls, turns, model } = foldEvents(events);
+    return { answer, toolCalls, model, turns };
   }
 }
 
@@ -325,5 +350,61 @@ describe("POST /accounts/:accountId/ask", () => {
   it("400s a non-uuid account", async () => {
     const res = await http().post("/accounts/not-a-uuid/ask").send({ question: "hi" });
     expect(res.status).toBe(400);
+  });
+});
+
+// SSE streaming variant (ADR-0010). Same scripted brain + real tools; here we
+// assert the on-the-wire AgentEvent sequence the controller emits.
+describe("POST /accounts/:accountId/ask/stream", () => {
+  function parseSse(text: string): AgentEvent[] {
+    return text
+      .split("\n\n")
+      .map((frame) => frame.trim())
+      .filter((frame) => frame.startsWith("data:"))
+      .map((frame) => AgentEventSchema.parse(JSON.parse(frame.slice("data:".length).trim())));
+  }
+
+  it("streams tool_call -> tool_result -> answer -> done(ok) as AgentEvents", async () => {
+    scripted.decisions = [{ tool: "summarize_account", input: { accountId } }];
+    scripted.phrase = (results) => {
+      const net = (results[0] as { net: { direction: string; amount: { amount: string } } }).net;
+      return `net is ${net.direction} ${net.amount.amount}`;
+    };
+
+    const res = await http()
+      .post(`/accounts/${accountId}/ask/stream`)
+      .send({ question: "What is my net?" });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    // Each frame parses on the shared contract; the full sequence matches the loop.
+    expect(parseSse(res.text)).toEqual([
+      { type: "tool_call", tool: "summarize_account", input: { accountId } },
+      { type: "tool_result", tool: "summarize_account", ok: true },
+      { type: "answer", text: "net is credit 243000" }, // the REAL fold, via MCP + DB
+      { type: "done", stopReason: "ok", meta: { model: "scripted", turns: 1 } },
+    ]);
+  });
+
+  it("404s an unknown account before opening the stream", async () => {
+    const res = await http().post(`/accounts/${randomUUID()}/ask/stream`).send({ question: "hi" });
+    expect(res.status).toBe(404);
+    expect(res.headers["content-type"] ?? "").not.toContain("text/event-stream");
+  });
+});
+
+describe("GET /accounts", () => {
+  it("lists the accounts as the shared Account shape (currencyCode -> currency)", async () => {
+    const res = await http().get("/accounts");
+    expect(res.status).toBe(200);
+    const parsed = AccountsResponseSchema.parse(res.body);
+    const ids = parsed.accounts.map((a) => a.id);
+    expect(ids).toContain(accountId);
+    expect(ids).toContain(otherAccountId);
+    expect(parsed.accounts.find((a) => a.id === accountId)).toMatchObject({
+      name: "Primary",
+      currency: "USD",
+      kind: "bank",
+    });
   });
 });
