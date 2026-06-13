@@ -21,6 +21,7 @@ export default defineConfig({
     },
   },
   test: {
+    name: "integration",
     include: ["apps/**/*.itest.ts", "packages/**/*.itest.ts"],
     // `reflect-metadata` is imported as the first line of the HTTP e2e suite,
     // before any NestJS-decorated class is evaluated.

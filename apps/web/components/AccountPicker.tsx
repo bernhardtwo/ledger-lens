@@ -1,10 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ApiError, listAccounts } from "../lib/api";
+import { type ApiError, listAccounts, toApiError } from "../lib/api";
 import type { Account } from "../lib/contracts";
 import { Badge } from "./Badge";
-import { Button } from "./Button";
 import { Card } from "./Card";
 import { ErrorBanner } from "./ErrorBanner";
 import { Spinner } from "./Spinner";
@@ -16,9 +16,7 @@ type State =
 
 /**
  * The no-auth demo picker. Fetches `GET /accounts` from the browser via the
- * same-origin `/api` proxy and renders the seed accounts from real API data +
- * shared types — the end-to-end proof that the proxy, the shared import, and the
- * transpile all work. (Selecting an account opens the workspace in Chunk C.)
+ * same-origin `/api` proxy and links each seed account to its workspace.
  */
 export function AccountPicker() {
   const [state, setState] = useState<State>({ status: "loading" });
@@ -33,10 +31,7 @@ export function AccountPicker() {
       })
       .catch((error: unknown) => {
         if (active) {
-          setState({
-            status: "error",
-            error: error instanceof ApiError ? error : new ApiError(0, "Unexpected error"),
-          });
+          setState({ status: "error", error: toApiError(error) });
         }
       });
     return () => {
@@ -78,9 +73,12 @@ export function AccountPicker() {
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <Badge tone="neutral">{account.currency}</Badge>
-              <Button variant="ghost" disabled title="Opens in Chunk C">
-                Open
-              </Button>
+              <Link
+                href={`/accounts/${account.id}`}
+                className="inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+              >
+                Open →
+              </Link>
             </div>
           </Card>
         </li>

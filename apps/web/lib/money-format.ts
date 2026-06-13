@@ -12,9 +12,13 @@ export interface MoneyDisplay {
   readonly tone: string;
 }
 
+/** Single source for the in/out colour: debit (out) = rose, credit (in) = emerald. */
+export function directionTone(direction: Direction): string {
+  return direction === "debit" ? "text-rose-600" : "text-emerald-600";
+}
+
 export function moneyDisplay(amount: MoneyDTO, direction: Direction): MoneyDisplay {
   const decimal = moneyDtoToDecimalString(amount);
   const sign = direction === "debit" ? "-" : "+";
-  const tone = direction === "debit" ? "text-rose-600" : "text-emerald-600";
-  return { text: `${sign}${amount.currency} ${decimal}`, tone };
+  return { text: `${sign}${amount.currency} ${decimal}`, tone: directionTone(direction) };
 }

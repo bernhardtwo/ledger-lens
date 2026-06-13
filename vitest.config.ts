@@ -1,10 +1,14 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
+/**
+ * The node project: pure unit tests across packages + apps (incl. the web app's
+ * pure `.ts` tests — api client, money-format). React component tests (`.tsx`) run
+ * in their own jsdom project (`apps/web/vitest.config.ts`), wired via the workspace.
+ */
 export default defineConfig({
   test: {
-    // `.tsx` is included so future React component tests are collected, not silently
-    // skipped; jsdom/RTL infra lands with the Chunk C component-render tests.
-    include: ["packages/**/*.{test,spec}.{ts,tsx}", "apps/**/*.{test,spec}.{ts,tsx}"],
+    name: "node",
+    include: ["packages/**/*.{test,spec}.ts", "apps/**/*.{test,spec}.ts"],
     // Integration tests (*.itest.ts) need Docker; they run via the separate
     // vitest.integration.config.ts (`pnpm test:integration`), not here.
     exclude: [...configDefaults.exclude, "**/*.itest.ts"],

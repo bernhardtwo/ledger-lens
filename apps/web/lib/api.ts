@@ -4,8 +4,17 @@
  * the client boundary, and both server error-body shapes are normalised to one
  * `ApiError` before the UI sees them.
  */
-import type { ZodType } from "zod";
-import { type Account, AccountsResponseSchema } from "./contracts";
+import type { TypeOf, ZodTypeAny } from "zod";
+import {
+  type Account,
+  AccountsResponseSchema,
+  type CategorizeResponse,
+  CategorizeResponseSchema,
+  type StatementIngestResponse,
+  StatementIngestResponseSchema,
+  type TransactionsPageResponse,
+  TransactionsPageResponseSchema,
+} from "./contracts";
 
 /** A normalised API failure. `status === 0` means the network/proxy was unreachable. */
 export class ApiError extends Error {
@@ -18,6 +27,11 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** Coerce an unknown thrown value to an `ApiError` (non-`ApiError` ⇒ unexpected). */
+export function toApiError(error: unknown): ApiError {
+  return error instanceof ApiError ? error : new ApiError(0, "Unexpected error");
 }
 
 /**
@@ -35,10 +49,18 @@ function normalizeError(status: number, body: unknown): ApiError {
   return new ApiError(status, `request failed (${status})`);
 }
 
-async function getJson<T>(path: string, schema: ZodType<T>): Promise<T> {
+// Generic over the schema (not its output T) so a schema whose input differs from
+// its output — e.g. the branded `IsoDate` on `transactionDate` — keeps its OUTPUT type.
+async function request<S extends ZodTypeAny>(
+  path: string,
+  schema: S,
+  init?: RequestInit,
+): Promise<TypeOf<S>> {
   let res: Response;
   try {
-    res = await fetch(path, { headers: { Accept: "application/json" } });
+    // No Content-Type set: GET/POST-no-body don't need one, and a FormData body must
+    // be left to the browser so it sets the multipart boundary.
+    res = await fetch(path, { ...init, headers: { Accept: "application/json" } });
   } catch {
     throw new ApiError(0, "API unreachable");
   }
@@ -49,7 +71,7 @@ async function getJson<T>(path: string, schema: ZodType<T>): Promise<T> {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     // Server reachable but the contract broke (drift / unexpected payload) — a
-    // distinct failure, NOT "unreachable" (which would misdiagnose it as a network outage).
+    // distinct failure, NOT "unreachable" (which would misdiagnose a network outage).
     throw new ApiError(res.status, "unexpected response shape", "invalid-response");
   }
   return parsed.data;
@@ -57,6 +79,41 @@ async function getJson<T>(path: string, schema: ZodType<T>): Promise<T> {
 
 /** `GET /accounts` — the demo accounts for the no-auth picker. */
 export async function listAccounts(): Promise<Account[]> {
-  const page = await getJson("/api/accounts", AccountsResponseSchema);
+  const page = await request("/api/accounts", AccountsResponseSchema);
   return page.accounts;
+}
+
+/** Keyset page size; the API clamps to [1, 200] and defaults to 50. */
+export const TRANSACTIONS_PAGE_LIMIT = 50;
+
+/** `GET /accounts/:id/transactions` — one keyset page (forward-only). */
+export function listTransactions(
+  accountId: string,
+  cursor?: string,
+): Promise<TransactionsPageResponse> {
+  const params = new URLSearchParams({ limit: String(TRANSACTIONS_PAGE_LIMIT) });
+  if (cursor !== undefined) {
+    params.set("cursor", cursor);
+  }
+  return request(
+    `/api/accounts/${accountId}/transactions?${params.toString()}`,
+    TransactionsPageResponseSchema,
+  );
+}
+
+/** `POST /accounts/:id/statements` — multipart CSV upload (field `file`). */
+export function uploadStatement(accountId: string, file: File): Promise<StatementIngestResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return request(`/api/accounts/${accountId}/statements`, StatementIngestResponseSchema, {
+    method: "POST",
+    body: form,
+  });
+}
+
+/** `POST /accounts/:id/categorize` — idempotent; categorises NULL rows only. */
+export function categorizeAccount(accountId: string): Promise<CategorizeResponse> {
+  return request(`/api/accounts/${accountId}/categorize`, CategorizeResponseSchema, {
+    method: "POST",
+  });
 }

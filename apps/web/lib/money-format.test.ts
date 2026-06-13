@@ -31,4 +31,18 @@ describe("moneyDisplay (determinism-first)", () => {
       moneyDisplay({ amount: "999", currency: "EUR", minorUnitExponent: 2 }, "debit").text,
     ).toBe("-EUR 9.99");
   });
+
+  // Exponent-driven, not a hardcoded ÷100: a 0-exponent currency has no decimal,
+  // a 3-exponent currency has three.
+  it("renders a zero-exponent currency with no decimal point (JPY)", () => {
+    expect(
+      moneyDisplay({ amount: "1500", currency: "JPY", minorUnitExponent: 0 }, "debit").text,
+    ).toBe("-JPY 1500");
+  });
+
+  it("renders a three-exponent currency with three decimals (BHD)", () => {
+    expect(
+      moneyDisplay({ amount: "1234567", currency: "BHD", minorUnitExponent: 3 }, "credit").text,
+    ).toBe("+BHD 1234.567");
+  });
 });
