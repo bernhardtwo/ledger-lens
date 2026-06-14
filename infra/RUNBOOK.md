@@ -66,53 +66,59 @@ az containerapp job logs show -n ledgerlens-migrate -g rg-ledgerlens --container
 ## View traces (Application Insights) — the AI-native money shot
 
 Telemetry is emitted only when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set (it is, on
-the api, as an ACA secret). Manual spans land in the **`dependencies`** table (type
-`InProc`); the cost/turns histograms land in **`customMetrics`**; HTTP requests in
-**`requests`**; 5xx faults in **`exceptions`**.
+the api, as an ACA secret). This App Insights is **workspace-based**, so telemetry lands
+in the Log Analytics workspace's **`App*`** tables: manual spans in **`AppDependencies`**,
+the cost/turns histograms in **`AppMetrics`** (`Sum`/`ItemCount`), HTTP requests in
+**`AppRequests`**, 5xx faults in **`AppExceptions`**. (The classic
+`dependencies`/`requests`/`customMetrics` aliases work in the **portal** Logs /
+Transaction-search experience, but the `az monitor app-insights query` CLI does not
+federate to them for a workspace-based resource — query the workspace directly instead.)
 
 Portal: Application Insights → **Transaction search** (find an `agent.ask`, expand to see
 its child `agent.tool …` spans) or **Application map**.
 
-CLI (needs `az extension add -n application-insights`):
+CLI (workspace `App*` tables; needs `az extension add -n log-analytics`):
 
 ```bash
-APPID=$(az monitor app-insights component show -g rg-ledgerlens -a ledgerlens-appi --query appId -o tsv)
-az monitor app-insights query --app "$APPID" --analytics-query '<KQL below>'
+WS=$(az monitor log-analytics workspace show -g rg-ledgerlens -n ledgerlens-law --query customerId -o tsv)
+az monitor log-analytics query -w "$WS" --analytics-query '<KQL below>'
 ```
 
 KQL snippets:
 
 ```kusto
-// Agent runs: model, turns, tool count, stop reason, duration.
-dependencies
-| where name == "agent.ask"
-| project timestamp, duration,
-          model      = tostring(customDimensions["agent.model"]),
-          turns      = toint(customDimensions["agent.turns"]),
-          tools      = toint(customDimensions["agent.tool_count"]),
-          stopReason = tostring(customDimensions["agent.stop_reason"])
-| order by timestamp desc
+// Agent runs: model, turns, tool count, cost (server-side), stop reason, duration.
+AppDependencies
+| where Name == "agent.ask"
+| project TimeGenerated, DurationMs,
+          streaming  = tostring(Properties["agent.streaming"]),
+          model      = tostring(Properties["agent.model"]),
+          turns      = toint(Properties["agent.turns"]),
+          tools      = toint(Properties["agent.tool_count"]),
+          cost_usd   = todouble(Properties["agent.cost_usd"]),
+          stopReason = tostring(Properties["agent.stop_reason"])
+| order by TimeGenerated desc
 
 // Per-tool spans: name, ok, api-observed latency (NOT in-DB time — ADR-0013).
-dependencies
-| where name startswith "agent.tool "
-| project timestamp, tool = tostring(customDimensions["tool.name"]),
-          ok = tostring(customDimensions["tool.ok"]), latency_ms = duration
-| order by timestamp desc
+AppDependencies
+| where Name startswith "agent.tool "
+| project TimeGenerated, tool = tostring(Properties["tool.name"]),
+          ok = tostring(Properties["tool.ok"]), latency_ms = DurationMs
+| order by TimeGenerated desc
 
-// Cost + turns metrics (customMetrics histograms).
-customMetrics
-| where name in ("agent.cost_usd", "agent.turns")
-| summarize avg(value), sum(value), count() by name, bin(timestamp, 1h)
+// Cost + turns metrics (OTel histograms → Sum / ItemCount).
+AppMetrics
+| where Name in ("agent.cost_usd", "agent.turns")
+| summarize runs = sum(ItemCount), total = round(sum(Sum), 5) by Name
 
 // SSE lifecycle (attributes on the streaming request span).
-requests
-| where url endswith "/ask/stream"
-| project timestamp, duration,
-          frames     = toint(customDimensions["sse.frames"]),
-          firstMs    = toint(customDimensions["sse.first_event_ms"]),
-          endReason  = tostring(customDimensions["sse.end_reason"])
-| order by timestamp desc
+AppRequests
+| where Url has "ask/stream"
+| project TimeGenerated, DurationMs,
+          frames    = toint(Properties["sse.frames"]),
+          firstMs   = toint(Properties["sse.first_event_ms"]),
+          endReason = tostring(Properties["sse.end_reason"])
+| order by TimeGenerated desc
 ```
 
 ## Teardown
