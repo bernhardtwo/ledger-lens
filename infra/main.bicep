@@ -1,9 +1,9 @@
 // LedgerLens — Phase 7 Step 2b infrastructure (ADR-0011, spec 0007).
 //
 // Azure Container Apps: web (external ingress) + api (internal ingress), Azure
-// Database for PostgreSQL Flexible Server (managed, TLS-enforced), ACR, ACA secrets.
-// App Insights / OpenTelemetry instrumentation is deferred to 2d — the Log Analytics
-// workspace here is only the ACA environment's operational log sink.
+// Database for PostgreSQL Flexible Server (managed, TLS-enforced), ACR (pulled via a
+// user-assigned managed identity — admin user disabled, ADR-0013), ACA secrets, and a
+// workspace-based Application Insights for the api's OpenTelemetry (ADR-0013, 2d).
 //
 // Deployed in TWO passes via `deployApps` (see deploy.sh): pass 1 (false) provisions
 // ACR + Postgres + the environment so images can be pushed; pass 2 (true) deploys the
@@ -61,15 +61,39 @@ resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-// --- Azure Container Registry (Basic; admin creds for the first deploy —
-//     managed-identity acrPull is the 2d hardening follow-up). ---
+// --- Azure Container Registry (Basic). Admin user is DISABLED (ADR-0013): the apps +
+//     job pull via the user-assigned identity below; deploy.sh pushes via `az acr
+//     login` (AAD token). No registry password is stored anywhere. ---
 resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   name: acrName
   location: location
   tags: tags
   sku: { name: 'Basic' }
   properties: {
-    adminUserEnabled: true
+    adminUserEnabled: false
+  }
+}
+
+// --- User-assigned identity that pulls images, granted AcrPull on the registry.
+//     Created ungated (pass 1) so the role assignment has propagated before pass 2's
+//     apps activate a revision and pull. ---
+resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-pull-id'
+  location: location
+  tags: tags
+}
+
+resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, pullIdentity.id, 'AcrPull')
+  scope: acr
+  properties: {
+    // AcrPull built-in role.
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    )
+    principalId: pullIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -122,19 +146,36 @@ resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   }
 }
 
+// --- Application Insights (workspace-based on the existing LAW) — the destination for
+//     the api's OpenTelemetry exporter (ADR-0013, spec 0007 §6.1). Its connection
+//     string is surfaced as an api-only ACA secret below. ---
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${namePrefix}-appi'
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: law.id
+    IngestionMode: 'LogAnalytics'
+  }
+}
+
 var registryServer = acr.properties.loginServer
 
-// Common registry block (admin creds via a secret) shared by both apps + the job.
+// Registry auth by user-assigned identity (no stored password), shared by both apps +
+// the job. Pairs with the matching `identity` block (pullIdentityRef) on each resource.
 var registries = [
   {
     server: registryServer
-    username: acr.listCredentials().username
-    passwordSecretRef: 'acr-password'
+    identity: pullIdentity.id
   }
 ]
-var acrSecret = {
-  name: 'acr-password'
-  value: acr.listCredentials().passwords[0].value
+var pullIdentityRef = {
+  type: 'UserAssigned'
+  userAssignedIdentities: {
+    '${pullIdentity.id}': {}
+  }
 }
 
 // --- api container app: INTERNAL ingress (only the web app reaches it) ---
@@ -142,7 +183,8 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: apiAppName
   location: location
   tags: tags
-  dependsOn: [pgAllowAzure]
+  identity: pullIdentityRef
+  dependsOn: [pgAllowAzure, acrPull]
   properties: {
     managedEnvironmentId: env.id
     configuration: {
@@ -155,9 +197,9 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
       }
       registries: registries
       secrets: [
-        acrSecret
         { name: 'database-url', value: databaseUrl }
         { name: 'anthropic-api-key', value: anthropicApiKey }
+        { name: 'appinsights-connection-string', value: appInsights.properties.ConnectionString }
       ]
     }
     template: {
@@ -171,6 +213,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'PORT', value: '3001' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
           ]
           probes: [
             {
@@ -207,6 +250,8 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: webAppName
   location: location
   tags: tags
+  identity: pullIdentityRef
+  dependsOn: [acrPull]
   properties: {
     managedEnvironmentId: env.id
     configuration: {
@@ -218,7 +263,7 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         allowInsecure: false
       }
       registries: registries
-      secrets: [acrSecret]
+      secrets: []
     }
     template: {
       containers: [
@@ -243,7 +288,8 @@ resource migrateJob 'Microsoft.App/jobs@2024-03-01' = if (deployApps) {
   name: '${namePrefix}-migrate'
   location: location
   tags: tags
-  dependsOn: [pgAllowAzure]
+  identity: pullIdentityRef
+  dependsOn: [pgAllowAzure, acrPull]
   properties: {
     environmentId: env.id
     configuration: {
@@ -253,7 +299,6 @@ resource migrateJob 'Microsoft.App/jobs@2024-03-01' = if (deployApps) {
       manualTriggerConfig: { parallelism: 1, replicaCompletionCount: 1 }
       registries: registries
       secrets: [
-        acrSecret
         { name: 'database-url', value: databaseUrl }
       ]
     }
@@ -280,3 +325,4 @@ output envDefaultDomain string = env.properties.defaultDomain
 output pgFqdn string = pg.properties.fullyQualifiedDomainName
 output apiInternalFqdn string = apiApp.?properties.configuration.ingress.fqdn ?? ''
 output webFqdn string = webApp.?properties.configuration.ingress.fqdn ?? ''
+output appInsightsName string = appInsights.name

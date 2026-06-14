@@ -6,6 +6,7 @@
  */
 import { type Database, getAccountById } from "@ledger-lens/db";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { trace } from "@opentelemetry/api";
 import type { Response } from "express";
 import type { StreamingQaAgent } from "../../agent/types.js";
 import { DATABASE } from "../database/database.tokens.js";
@@ -42,10 +43,18 @@ export class AskStreamService {
     res.on("close", onClose);
     res.on("error", onClose); // swallow broken-pipe so a dropped socket can't crash
 
+    // SSE lifecycle telemetry (ADR-0013): attributes on the active request span; a
+    // no-op when no OTel SDK is registered, and never awaited, so it cannot buffer.
+    const startedAt = Date.now();
+    let firstEventAt: number | undefined;
+    let frames = 0;
+    let endReason = "ok";
+
     let open = false;
     try {
       for await (const event of this.agent.askStream({ accountId, question }, controller)) {
         if (closed) {
+          endReason = "abort";
           break;
         }
         if (!open) {
@@ -61,23 +70,38 @@ export class AskStreamService {
           res.flushHeaders();
           open = true;
         }
+        firstEventAt ??= Date.now();
         res.write(`data: ${JSON.stringify(event)}\n\n`);
+        frames += 1;
       }
     } catch (error) {
       if (!open) {
         // Faulted before any event (e.g. missing key) -> let the exception filter
         // turn it into a proper HTTP status; nothing has been written yet.
+        endReason = "error";
         throw error;
       }
       if (!closed) {
         // Already streaming: the status is sent, so degrade to a terminal error event.
+        endReason = "error";
         res.write(
           `data: ${JSON.stringify({ type: "error", code: "agent_error", message: "the agent could not complete the request" })}\n\n`,
         );
+      } else {
+        endReason = "abort";
       }
     } finally {
       if (open && !closed) {
         res.end();
+      }
+      const span = trace.getActiveSpan();
+      if (span !== undefined) {
+        span.setAttribute("sse.frames", frames);
+        span.setAttribute("sse.end_reason", endReason);
+        span.setAttribute("sse.duration_ms", Date.now() - startedAt);
+        if (firstEventAt !== undefined) {
+          span.setAttribute("sse.first_event_ms", firstEventAt - startedAt);
+        }
       }
     }
   }

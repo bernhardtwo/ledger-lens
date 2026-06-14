@@ -20,8 +20,24 @@ import {
   HttpException,
   HttpStatus,
 } from "@nestjs/common";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Response } from "express";
 import { IngestionError, type IngestionErrorKind } from "../../ingestion/index.js";
+
+/**
+ * Record a server-fault (5xx) exception on the active OTel span (ADR-0013) so it lands
+ * in App Insights with a stack. No-op without an active span. 4xx client errors are
+ * deliberately NOT recorded — they are normal and would be noise in the exceptions feed.
+ */
+function recordServerFault(exception: unknown): void {
+  const span = trace.getActiveSpan();
+  if (span === undefined) {
+    return;
+  }
+  const error = exception instanceof Error ? exception : new Error(String(exception));
+  span.recordException(error); // captures the full message + stack as a span event
+  span.setStatus({ code: SpanStatusCode.ERROR, message: "server fault" });
+}
 
 const INGESTION_STATUS: Record<IngestionErrorKind, number> = {
   "empty-file": HttpStatus.BAD_REQUEST,
@@ -77,12 +93,16 @@ export class HttpExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const payload = exception.getResponse();
+      if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+        recordServerFault(exception); // e.g. the agent 502 (BadGateway)
+      }
       response
         .status(status)
         .json(typeof payload === "string" ? { statusCode: status, message: payload } : payload);
       return;
     }
 
+    recordServerFault(exception);
     response
       .status(HttpStatus.INTERNAL_SERVER_ERROR)
       .json({ statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: "internal server error" });

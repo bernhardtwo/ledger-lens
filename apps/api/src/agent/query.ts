@@ -90,14 +90,22 @@ export function buildAskOptions(config: AgentConfig, accountId: string): Options
 
 /**
  * Environment for the MCP child: inherit `process.env` (for `PATH` / node + tsx
- * resolution) but **drop `ANTHROPIC_API_KEY`** — the MCP server never calls the
- * API, so least privilege keeps the key out of its process — then inject the
- * `DATABASE_URL` it does need.
+ * resolution) but **withhold** the parent's secrets it doesn't need — least
+ * privilege — then inject the `DATABASE_URL` it does need:
+ *  - `ANTHROPIC_API_KEY`: the MCP server never calls the API;
+ *  - `APPLICATIONINSIGHTS_CONNECTION_STRING`: telemetry init is the api process's
+ *    concern only; the child is not instrumented (cross-process tracing is deferred,
+ *    ADR-0013).
  */
+const MCP_CHILD_WITHHELD_ENV = new Set([
+  "ANTHROPIC_API_KEY",
+  "APPLICATIONINSIGHTS_CONNECTION_STRING",
+]);
+
 function mcpChildEnv(databaseUrl: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && key !== "ANTHROPIC_API_KEY") {
+    if (value !== undefined && !MCP_CHILD_WITHHELD_ENV.has(key)) {
       env[key] = value;
     }
   }

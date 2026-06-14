@@ -100,5 +100,10 @@ client code. Copy `.env.example` to `.env` (gitignored).
 
 ## Phase status
 
-Phase 0 (this scaffold) is **done**: monorepo, tooling, AI-native config, ADRs,
-CI skeleton. Next: Phase 1 — domain core (NestJS + Drizzle + ingestion).
+Phases 0–6 are **done** (domain core, categorization, MCP server, agent, eval, web).
+**Phase 7 — live deployment + observability — is done:** the stack runs on Azure
+Container Apps (centralus) — two images, Bicep IaC, the migrate/seed ACA Job,
+managed-identity ACR pull (no stored registry password), App Insights + OpenTelemetry
+(agent-run + per-tool spans, cost/turns metrics; ADR-0013), and the cloud-SSE-through-
+Envoy gate verified un-buffered. Ops: `infra/RUNBOOK.md`. Deferred Phase 7 follow-ups: a
+GitHub Actions `deploy.yml` (OIDC) and Key Vault-backed secrets.

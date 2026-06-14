@@ -96,15 +96,31 @@ az postgres flexible-server stop -n <server> -g rg-ledgerlens   # ~$4/mo stopped
 az postgres flexible-server start -n <server> -g rg-ledgerlens  # before the next demo
 ```
 
-Teardown everything: `az group delete -n rg-ledgerlens --yes --no-wait`.
+Day-2 operations (deploy, start/stop, **view traces**, KQL) live in
+[`infra/RUNBOOK.md`](./RUNBOOK.md). Teardown everything:
+`az group delete -n rg-ledgerlens --yes --no-wait`.
+
+## Observability (2d — ADR-0013)
+
+A workspace-based **Application Insights** (`ledgerlens-appi`, on the existing LAW)
+receives the api's **OpenTelemetry**: HTTP request traces, an `agent.ask` span per
+question, **per-tool `agent.tool …` child spans**, and `agent.cost_usd`/`agent.turns`
+metrics. Init is `node --import dist/observability/instrumentation.js`, a **no-op unless
+`APPLICATIONINSIGHTS_CONNECTION_STRING` is set** (api-only ACA secret). See the runbook
+for how to view traces.
 
 ## Known follow-ups
 
-- **ACR auth**: admin credentials for now; managed-identity `acrPull` is the 2d
-  hardening step.
-- **Secrets**: ACA secrets now; Key Vault references are the documented upgrade path.
-  The generated Postgres admin password is cached in `infra/.pg-password` (gitignored)
-  so re-runs reuse it instead of rotating the credential.
-- **Deployed live** to `centralus` on 2026-06-14 (Azure for Students): both apps healthy,
-  managed-PG migrate/seed/verify green over TLS, and the non-SSE smoke + secret-to-child
-  passed. The streaming-SSE-through-Envoy gate (2c) and App Insights (2d) remain open.
+- **ACR auth**: ✅ done — apps + the job pull via a user-assigned managed identity
+  (`AcrPull`); the ACR **admin user is disabled** and `deploy.sh` pushes via `az acr
+  login`, so no registry password is stored anywhere.
+- **Secrets**: ACA secrets (`database-url`, `anthropic-api-key`,
+  `appinsights-connection-string`); **Key Vault** references are the deferred upgrade
+  path. The Postgres admin password is cached in `infra/.pg-password` (gitignored) so
+  re-runs reuse it instead of rotating the credential.
+- **CI/CD**: a GitHub Actions `deploy.yml` (OIDC, build/push, Bicep deploy) is the
+  remaining Phase 7 automation; deploys are manual via `deploy.sh` today.
+- **Deployed live** to `centralus` (Azure for Students): both apps healthy, managed-PG
+  migrate/seed/verify green over TLS, the non-SSE smoke + secret-to-child passed, the
+  streaming-SSE-through-Envoy gate (2c) verified **un-buffered**, and App Insights /
+  OpenTelemetry (2d) wired.

@@ -49,4 +49,6 @@ EXPOSE 3001
 # `--conditions=ledgerlens-dist` makes every @ledger-lens/* import resolve to the
 # compiled dist (ADR-0012); the api passes the same condition to the MCP child it
 # spawns (mcp-launch.ts). ANTHROPIC_API_KEY + DATABASE_URL arrive as runtime env.
-CMD ["node", "--conditions=ledgerlens-dist", "dist/http/main.js"]
+# `--import` loads the OpenTelemetry bootstrap BEFORE the app so http/express are
+# patched; it no-ops unless APPLICATIONINSIGHTS_CONNECTION_STRING is set (ADR-0013).
+CMD ["node", "--conditions=ledgerlens-dist", "--import", "./dist/observability/instrumentation.js", "dist/http/main.js"]

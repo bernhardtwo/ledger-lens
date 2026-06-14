@@ -17,6 +17,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentEvent } from "@ledger-lens/shared";
 import { Logger } from "@nestjs/common";
+import { instrumentAgentRun } from "../observability/telemetry.js";
 import { mcpServerLaunch } from "./mcp-launch.js";
 import { type AgentConfig, buildAskOptions } from "./query.js";
 import { createEventMapper, foldMessages } from "./stream.js";
@@ -74,8 +75,12 @@ export class AgentSdkQaAgent implements QaAgent, StreamingQaAgent {
       options.abortController = controller;
     }
     const mapper = createEventMapper(this.runtime.model);
+    const run = instrumentAgentRun(
+      { accountId, model: this.runtime.model, streaming: true },
+      query({ prompt: question, options }),
+    );
     try {
-      for await (const message of query({ prompt: question, options })) {
+      for await (const message of run) {
         yield* mapper.push(message);
       }
     } catch {
@@ -89,8 +94,12 @@ export class AgentSdkQaAgent implements QaAgent, StreamingQaAgent {
   private async collect(accountId: string, question: string): Promise<SDKMessage[]> {
     const options = buildAskOptions(this.config(), accountId);
     const messages: SDKMessage[] = [];
+    const run = instrumentAgentRun(
+      { accountId, model: this.runtime.model, streaming: false },
+      query({ prompt: question, options }),
+    );
     try {
-      for await (const message of query({ prompt: question, options })) {
+      for await (const message of run) {
         messages.push(message);
       }
     } catch (error) {

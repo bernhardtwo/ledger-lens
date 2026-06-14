@@ -97,9 +97,9 @@ docker_login_acr() {
   [ "$ACR_LOGGED_IN" = 1 ] && return 0
   command -v docker >/dev/null || { echo "ERROR: local image build needs Docker, which is not installed" >&2; exit 1; }
   docker info >/dev/null 2>&1 || { echo "ERROR: local image build needs a running Docker daemon" >&2; exit 1; }
-  local user; user="$(az acr credential show -n "$ACR_NAME" --query username -o tsv)"
-  az acr credential show -n "$ACR_NAME" --query 'passwords[0].value' -o tsv \
-    | docker login "$REG" -u "$user" --password-stdin
+  # ACR admin user is disabled (ADR-0013) — authenticate docker with the caller's AAD
+  # token (`az acr login`) rather than a stored registry password.
+  az acr login --name "$ACR_NAME"
   ACR_LOGGED_IN=1
 }
 
