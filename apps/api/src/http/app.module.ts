@@ -4,6 +4,7 @@ import { AccountsModule } from "./accounts/accounts.module.js";
 import { AskModule } from "./ask/ask.module.js";
 import { CategorizationModule } from "./categorization/categorization.module.js";
 import { HttpExceptionsFilter } from "./common/http-exceptions.filter.js";
+import { HealthModule } from "./health/health.module.js";
 import { StatementsModule } from "./statements/statements.module.js";
 import { TransactionsModule } from "./transactions/transactions.module.js";
 
@@ -13,7 +14,14 @@ import { TransactionsModule } from "./transactions/transactions.module.js";
  * harness, which never runs `main.ts`.
  */
 @Module({
-  imports: [AccountsModule, StatementsModule, TransactionsModule, CategorizationModule, AskModule],
+  imports: [
+    HealthModule,
+    AccountsModule,
+    StatementsModule,
+    TransactionsModule,
+    CategorizationModule,
+    AskModule,
+  ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionsFilter }],
 })
 export class AppModule {}
