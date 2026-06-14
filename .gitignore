@@ -13,6 +13,7 @@ out/
 .env
 .env.local
 .env.*.local
+infra/.pg-password
 
 # logs
 *.log
