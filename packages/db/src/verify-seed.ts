@@ -33,6 +33,35 @@ export async function verifySeed(): Promise<void> {
     if (withTransactions === 0) {
       throw new Error("seed verification failed: no transactions in any seed account");
     }
+    // Live TLS check (ADR-0011, spec 0007). When the URL requests SSL, assert this
+    // session is actually encrypted (pg_stat_ssl observes the backend's socket) and
+    // log the server's enforcement setting. Fail-closed; no-op locally (dev/
+    // testcontainers URLs carry no sslmode). Note: against a TLS-requiring managed
+    // server, a URL that *drops* sslmode fails to connect at all — so plaintext can't
+    // silently slip through even though this assertion is gated on the requested mode.
+    const wantsSsl = /[?&]sslmode=(require|verify-ca|verify-full)/.test(url);
+    const sslRows = await client<{ ssl: boolean }[]>`
+      select ssl from pg_stat_ssl where pid = pg_backend_pid()`;
+    const sslActive = sslRows[0]?.ssl === true;
+    // require_secure_transport is an Azure Flexible Server parameter, absent on vanilla
+    // PostgreSQL (local / testcontainers) — query it best-effort for enforcement
+    // visibility without breaking the non-Azure path.
+    let enforced = "n/a";
+    try {
+      const enforceRows = await client<{ require_secure_transport: string }[]>`
+        show require_secure_transport`;
+      enforced = enforceRows[0]?.require_secure_transport ?? "unknown";
+    } catch {
+      enforced = "n/a";
+    }
+    stdout.write(
+      `db tls: session_ssl=${sslActive} server_require_secure_transport=${enforced} (sslmode requested: ${wantsSsl})\n`,
+    );
+    if (wantsSsl && !sslActive) {
+      throw new Error(
+        "expected a TLS session (sslmode=require) but pg_stat_ssl reports it is not encrypted",
+      );
+    }
     stdout.write(
       `seed verification ok: ${SEED_ACCOUNTS.length} accounts present, ${withTransactions} with transactions\n`,
     );
