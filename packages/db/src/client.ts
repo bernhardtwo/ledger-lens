@@ -20,7 +20,15 @@ export interface DatabaseConnection {
   readonly client: postgres.Sql;
 }
 
-/** Create a Drizzle client (and its connection pool) for a `postgres://` URL. */
+/**
+ * Create a Drizzle client (and its connection pool) for a `postgres://` URL.
+ *
+ * TLS is driven entirely by the URL, so it stays **env-conditional with nothing
+ * hardcoded** (ADR-0011, spec 0007): postgres.js maps a `?sslmode=require` query
+ * param onto its `ssl` option, so the cloud `DATABASE_URL` connects over TLS to the
+ * managed Postgres, while local dev and the testcontainers integration suite — whose
+ * URLs carry no `sslmode` — connect in plaintext and stay green.
+ */
 export function createDatabase(url: string): DatabaseConnection {
   const client = postgres(url);
   const db = drizzle(client, { schema });

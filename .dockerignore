@@ -1,0 +1,18 @@
+# Build-context excludes (shared by apps/api/Dockerfile and apps/web/Dockerfile,
+# both built from the repo root). Images install deps and compile inside the build,
+# so host artifacts and secrets must never enter the context.
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+.git
+.github
+.husky
+.claude
+.playwright-mcp
+.env
+.env.*
+!.env.example
+coverage
+packages/evals/reports
+**/*.log

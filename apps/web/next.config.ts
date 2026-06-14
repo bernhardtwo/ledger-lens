@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
 // The browser only ever calls same-origin Next; `/api/*` is proxied to the API
@@ -5,6 +7,12 @@ import type { NextConfig } from "next";
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 
 const nextConfig: NextConfig = {
+  // Emit a self-contained server bundle (`.next/standalone/.../server.js`) for the
+  // minimal container image (ADR-0012); shared is traced/transpiled into it.
+  output: "standalone",
+  // Trace from the monorepo root so the standalone bundle resolves workspace deps
+  // regardless of build cwd (ADR-0012).
+  outputFileTracingRoot: path.join(path.dirname(fileURLToPath(import.meta.url)), "../../"),
   // @ledger-lens/shared ships raw TS — Next must transpile it for the bundle.
   transpilePackages: ["@ledger-lens/shared"],
   // Biome lints the repo; don't run ESLint during `next build`.

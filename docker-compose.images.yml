@@ -1,0 +1,71 @@
+# Local end-to-end run of the BUILT production images — the Step 2a verification
+# (spec 0007). Proves the compiled api spawns the compiled MCP server over stdio,
+# that DATABASE_URL reaches that child, and that SSE streams un-buffered from inside
+# the container (the local analog of the cloud ingress gate). This is NOT the deploy
+# artifact: the cloud uses Bicep + Azure Container Apps (Step 2b).
+#
+#   ANTHROPIC_API_KEY is read from .env (gitignored).
+#   docker compose -f docker-compose.images.yml build
+#   docker compose -f docker-compose.images.yml up -d
+# Distinct project name so this can't collide with the dev docker-compose.yml in the
+# same directory (separate network + containers; no `postgres` service-alias clash).
+name: ledgerlens-images
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ledgerlens
+      POSTGRES_PASSWORD: ledgerlens
+      POSTGRES_DB: ledgerlens
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerlens"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  # One-shot: apply migrations + the idempotent demo seed using the compiled JS in
+  # the api image (the cloud analog is an ACA Job, spec 0007 §4).
+  migrate:
+    image: ledgerlens-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Deterministic job — needs only DATABASE_URL, never ANTHROPIC_API_KEY.
+    environment:
+      DATABASE_URL: postgresql://ledgerlens:ledgerlens@postgres:5432/ledgerlens
+    command:
+      - sh
+      - -c
+      - >-
+        node --conditions=ledgerlens-dist /app/node_modules/@ledger-lens/db/dist/migrate.js &&
+        node --conditions=ledgerlens-dist /app/node_modules/@ledger-lens/db/dist/demo-seed.js &&
+        node --conditions=ledgerlens-dist /app/node_modules/@ledger-lens/db/dist/verify-seed.js
+    restart: "no"
+
+  api:
+    image: ledgerlens-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://ledgerlens:ledgerlens@postgres:5432/ledgerlens
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (e.g. in .env)}
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+
+  web:
+    image: ledgerlens-web
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # In the compose network the api is reachable as http://api:3001.
+        API_BASE_URL: http://api:3001
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"

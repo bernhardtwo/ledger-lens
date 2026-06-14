@@ -66,7 +66,7 @@ installed binary is glibc end-to-end.
 
 **3. Multi-stage, pnpm-workspace-aware, pruned per app.** Build stage:
 `pnpm install --frozen-lockfile` over the whole workspace → `tsc` build the api's
-package set → `pnpm deploy --prod --filter=@ledger-lens/api <out>` to produce a
+package set → `pnpm --filter=@ledger-lens/api deploy --prod <out>` to produce a
 **self-contained** directory (pruned prod `node_modules`, the matching native
 binary kept, dev deps and `testcontainers` dropped). Runtime stage copies that dir
 + `dist` and sets the entrypoint. Workspace `workspace:*` deps are resolved by
