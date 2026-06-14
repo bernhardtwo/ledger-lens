@@ -11,8 +11,8 @@
 
 targetScope = 'resourceGroup'
 
-@description('Azure region for all resources.')
-param location string = 'canadacentral'
+@description('Azure region for all resources. Defaults to centralus: this subscription restricts allowed regions and Postgres Flexible Server is offer-restricted in every allowed region except centralus (see infra/README.md).')
+param location string = 'centralus'
 
 @description('Short prefix for resource names.')
 param namePrefix string = 'ledgerlens'

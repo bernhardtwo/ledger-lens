@@ -23,14 +23,16 @@ az login
 az account set --subscription "<your-subscription>"
 ```
 
-Docker is **not** required locally — images build server-side via `az acr build`.
+Docker is **not** required when ACR Tasks (`az acr build`) is available — images build
+server-side. If ACR Tasks is blocked (see *Known environment constraints*), `deploy.sh`
+falls back to a local `docker build`+push, which **does** need a running Docker daemon.
 `ANTHROPIC_API_KEY` is read from the repo `.env` (or pass it in the environment).
 
 ## Deploy
 
 ```bash
 bash infra/deploy.sh
-# overrides: LOCATION=canadacentral NAME_PREFIX=ledgerlens RG=rg-ledgerlens bash infra/deploy.sh
+# overrides: LOCATION=centralus NAME_PREFIX=ledgerlens RG=rg-ledgerlens BUILD_MODE=auto bash infra/deploy.sh
 ```
 
 What it does:
@@ -38,9 +40,11 @@ What it does:
 1. `az group create`.
 2. **Pass 1** — `main.bicep deployApps=false`: ACR, Postgres Flexible Server (B1ms,
    `?sslmode=require` enforced), ACA environment + Log Analytics.
-3. Builds + pushes both glibc images to ACR. The `web` image bakes `API_BASE_URL`
-   (the api's internal FQDN) at build time — Next rewrites are build-time, so a new
-   environment means a `web` rebuild (spec 0007 §3).
+3. Builds + pushes both glibc images to ACR — server-side via ACR Tasks (`az acr build`)
+   by default, or a local `docker build`+push fallback when ACR Tasks is blocked
+   (`BUILD_MODE`, see *Known environment constraints*). The `web` image bakes
+   `API_BASE_URL` (the api's internal FQDN) at build time — Next rewrites are build-time,
+   so a new environment means a `web` rebuild (spec 0007 §3).
 4. **Pass 2** — `main.bicep deployApps=true`: the two container apps + the migrate
    job, with `DATABASE_URL` + `ANTHROPIC_API_KEY` as **ACA secrets**.
 5. Starts the **migrate/seed/verify** job and waits (deploy.sh exits non-zero if the
@@ -55,6 +59,32 @@ What it does:
    asserts the answer contains a currency figure, proving `DATABASE_URL` reached the
    spawned MCP child and it queried managed Postgres over TLS. `SMOKE_ASK=0` skips that
    one Anthropic turn on routine re-deploys.
+
+## Known environment constraints (this subscription / WSL)
+
+The live target is an **Azure for Students** subscription driven from **WSL**. Three
+environment limits were hit on the first deploy and are now handled by the defaults
+above; they may not apply to other subscriptions:
+
+- **Region — centralus only.** An "Allowed resource deployment regions" policy limits the
+  sub to `westus2, eastus, southcentralus, centralus, eastus2`, and Postgres Flexible
+  Server is offer-restricted (`LocationIsOfferRestricted`) in all of those **except
+  centralus** — hence the `centralus` default. Probe a region read-only with the
+  capabilities API: `Microsoft.DBforPostgreSQL/locations/<loc>/capabilities`.
+- **ACR Tasks blocked.** `az acr build` returns `TasksOperationsNotAllowed` on this sub,
+  so `deploy.sh` auto-falls back to a local `docker build`+push (`BUILD_MODE=auto`). Force
+  it with `BUILD_MODE=local`; require server-side with `BUILD_MODE=acr`.
+- **Bicep ICU crash (WSL).** The az-bundled Bicep is a self-contained .NET binary that can
+  crash on this WSL's ICU during console-encoding init (a globalization fault, not a
+  template error). Work around it by exporting invariant globalization before deploying:
+
+  ```bash
+  export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+  bash infra/deploy.sh
+  ```
+
+  It is harmless elsewhere (Bicep needs no culture data) and is kept out of `deploy.sh`
+  because it is specific to this WSL host, not the deploy logic.
 
 ## Cost & lifecycle
 
@@ -75,5 +105,6 @@ Teardown everything: `az group delete -n rg-ledgerlens --yes --no-wait`.
 - **Secrets**: ACA secrets now; Key Vault references are the documented upgrade path.
   The generated Postgres admin password is cached in `infra/.pg-password` (gitignored)
   so re-runs reuse it instead of rotating the credential.
-- This IaC **compiles + lints + is reviewed** but has **not been deployed** to a live
-  subscription yet (pending `az login`); expect minor deploy-time iteration.
+- **Deployed live** to `centralus` on 2026-06-14 (Azure for Students): both apps healthy,
+  managed-PG migrate/seed/verify green over TLS, and the non-SSE smoke + secret-to-child
+  passed. The streaming-SSE-through-Envoy gate (2c) and App Insights (2d) remain open.

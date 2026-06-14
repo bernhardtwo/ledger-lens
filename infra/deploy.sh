@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # LedgerLens — Phase 7 Step 2b deploy (ADR-0011, spec 0007).
 #
-# Provisions the Azure stack (Bicep), builds+pushes the glibc images to ACR
-# (server-side, so no large local push), deploys api+web, runs the fail-closed
-# migrate/seed/verify job against managed Postgres, then the NON-SSE smoke.
-# Re-runnable. The streaming-SSE-through-Envoy test is 2c (separate).
+# Provisions the Azure stack (Bicep), builds+pushes the glibc images to ACR (server-side
+# via ACR Tasks, with an automatic local `docker build`+push fallback when ACR Tasks is
+# blocked — see BUILD_MODE), deploys api+web, runs the fail-closed migrate/seed/verify job
+# against managed Postgres, then the NON-SSE smoke. Re-runnable. SSE-through-Envoy is 2c.
 #
 # Prereqs: `az login` (active subscription); ANTHROPIC_API_KEY in the repo .env or the
 # environment; python3 (Ubuntu default) for JSON parsing. Run from anywhere:
 #   bash infra/deploy.sh
-#   env knobs: LOCATION, NAME_PREFIX, RG, PG_ADMIN_USER, IMAGE_TAG, SMOKE_ASK=0
+#   env knobs: LOCATION, NAME_PREFIX, RG, PG_ADMIN_USER, IMAGE_TAG, SMOKE_ASK=0, BUILD_MODE
 set -euo pipefail
 
-LOCATION="${LOCATION:-canadacentral}"
+# Default region centralus: the project's Azure-for-Students subscription is bound by an
+# "Allowed resource deployment regions" policy AND Postgres Flexible Server is offer-
+# restricted (LocationIsOfferRestricted) in every allowed region except centralus (see
+# infra/README.md "Known environment constraints"). Override for an unrestricted sub.
+LOCATION="${LOCATION:-centralus}"
 NAME_PREFIX="${NAME_PREFIX:-ledgerlens}"
 RG="${RG:-rg-${NAME_PREFIX}}"
 PG_ADMIN_USER="${PG_ADMIN_USER:-lladmin}"
@@ -75,11 +79,61 @@ API_HOST="${NAME_PREFIX}-api.internal.${ENV_DOMAIN}"
 API_BASE_URL="https://${API_HOST}"
 DATABASE_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}:5432/ledgerlens?sslmode=require"
 
-# ---- build + push images (server-side in ACR; .dockerignore keeps the context small) ----
-echo "== building images in ACR ($ACR_NAME) =="
-az acr build -r "$ACR_NAME" -t "${NAME_PREFIX}-api:${IMAGE_TAG}" -f apps/api/Dockerfile . -o none
-az acr build -r "$ACR_NAME" -t "${NAME_PREFIX}-web:${IMAGE_TAG}" -f apps/web/Dockerfile \
-  --build-arg API_BASE_URL="$API_BASE_URL" . -o none
+# ---- build + push images ----
+# Default path is server-side `az acr build` (ACR Tasks): no local Docker, and the
+# .dockerignore keeps the uploaded context small. Some subscriptions (e.g. Azure for
+# Students) block ACR Tasks with `TasksOperationsNotAllowed`; on that specific error we
+# fall back to a local `docker build`+`docker push` (needs a running Docker daemon). The
+# fallback pins linux/amd64 so the image runs on ACA regardless of the build host's arch.
+#   BUILD_MODE=auto  (default) try ACR Tasks; fall back to local only on TasksOperationsNotAllowed
+#   BUILD_MODE=acr   require ACR Tasks (fail if unavailable)
+#   BUILD_MODE=local always build locally (skip ACR Tasks)
+BUILD_MODE="${BUILD_MODE:-auto}"
+case "$BUILD_MODE" in auto|acr|local) ;; *) echo "ERROR: BUILD_MODE must be auto|acr|local (got '$BUILD_MODE')" >&2; exit 1 ;; esac
+REG="$(deployment_out acrLoginServer)"
+ACR_LOGGED_IN=0
+
+docker_login_acr() {
+  [ "$ACR_LOGGED_IN" = 1 ] && return 0
+  command -v docker >/dev/null || { echo "ERROR: local image build needs Docker, which is not installed" >&2; exit 1; }
+  docker info >/dev/null 2>&1 || { echo "ERROR: local image build needs a running Docker daemon" >&2; exit 1; }
+  local user; user="$(az acr credential show -n "$ACR_NAME" --query username -o tsv)"
+  az acr credential show -n "$ACR_NAME" --query 'passwords[0].value' -o tsv \
+    | docker login "$REG" -u "$user" --password-stdin
+  ACR_LOGGED_IN=1
+}
+
+# build_push <name:tag> <dockerfile> [extra docker/acr build args...]
+build_push() {
+  local tag="$1" dockerfile="$2"; shift 2
+  if [ "$BUILD_MODE" != "local" ]; then
+    echo "== az acr build $tag =="
+    local log; log="$(mktemp)" || { echo "ERROR: mktemp failed" >&2; exit 1; }
+    # Decide off az's own exit (PIPESTATUS[0]), not tee's, so a full/unwritable $TMPDIR
+    # can't invert a successful build into a spurious failure. errexit is off around the
+    # pipeline because a non-zero az here is an expected, recoverable signal (Tasks off).
+    set +e
+    az acr build -r "$ACR_NAME" -t "$tag" -f "$dockerfile" "$@" . -o none 2>&1 | tee "$log"
+    local rc=${PIPESTATUS[0]}
+    set -e
+    if [ "$rc" -eq 0 ]; then rm -f "$log"; return 0; fi
+    # Fall back to local ONLY on the specific ACR-Tasks-disabled error, matched on the
+    # CLI's error header / Code line (not a bare substring); any other failure aborts.
+    if [ "$BUILD_MODE" = "acr" ] || ! grep -qE '\(TasksOperationsNotAllowed\)|(Code|"code"):[[:space:]]*"?TasksOperationsNotAllowed' "$log"; then
+      rm -f "$log"; echo "ERROR: az acr build failed for $tag (exit $rc)" >&2; exit 1
+    fi
+    rm -f "$log"
+    echo "== ACR Tasks unavailable (TasksOperationsNotAllowed) -> local docker build =="
+  fi
+  docker_login_acr
+  echo "== docker build + push $tag (local, linux/amd64) =="
+  docker build --platform linux/amd64 -f "$dockerfile" "$@" -t "${REG}/${tag}" .
+  docker push "${REG}/${tag}"
+}
+
+echo "== building images ($ACR_NAME) =="
+build_push "${NAME_PREFIX}-api:${IMAGE_TAG}" apps/api/Dockerfile
+build_push "${NAME_PREFIX}-web:${IMAGE_TAG}" apps/web/Dockerfile --build-arg API_BASE_URL="$API_BASE_URL"
 
 # ---- pass 2: deploy apps + migrate job ----
 echo "== pass 2: deploying apps =="
@@ -131,7 +185,9 @@ if [ "$SMOKE_ASK" = "1" ]; then
   ANSWER="$(curl -fsS -X POST "https://$WEB_FQDN/api/accounts/$ACCT/ask" \
     -H 'content-type: application/json' -d '{"question":"How much did I spend on groceries in May?"}')"
   echo "ask(JSON) : $ANSWER"
-  printf '%s' "$ANSWER" | grep -qE '[$€£][0-9]' \
+  # Accept a symbol-prefixed figure ($130 / €130) OR a number with a trailing ISO code
+  # (130.00 EUR / 130 USD) — the agent phrases the amount either way.
+  printf '%s' "$ANSWER" | grep -qiE '[$€£][0-9]|[0-9][0-9.,]*[[:space:]]*(eur|usd|gbp)' \
     || { echo "ERROR: /ask returned no currency figure (secret-to-child unproven)" >&2; exit 1; }
   echo "secret-to-child: confirmed (MCP child reached managed Postgres over TLS)"
 fi
