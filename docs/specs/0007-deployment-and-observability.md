@@ -87,10 +87,53 @@ references via managed identity.
   the wire.
 - **Logs:** ACA streams the existing structured console logs to the environment's
   Log Analytics workspace for free.
-- **Honest limit (deferred):** MCP tool calls run inside the `claude`/MCP
-  **subprocesses**, which the api's OTel cannot span. We may emit a log/event per
-  `tool_call` from the SSE event mapper, but cross-process tracing into the binary
-  and web→api trace propagation are out of scope.
+- **Per-tool-call spans (refined in 2d — ADR-0013):** the api **does** emit a child
+  span per MCP tool-call, synthesised in-process from the live SDK message stream
+  (`tool_use` → `tool_result`, matched by id). Its latency is the orchestrator's
+  api-observed call→result round-trip, **not** the in-DB query time. Cross-process
+  tracing **into** the `claude`/MCP subprocess and **web→api** trace propagation stay
+  out of scope.
+
+### 6.1 2d implementation (observability) — ADR-0013
+
+Concrete plan; the rationale and the in-process-tool-span widening live in **ADR-0013**.
+
+**Instrument (in 2d):** ① HTTP request traces (auto); ② one `agent.ask` span per
+`/ask(/stream)` at the shared `AgentSdkQaAgent` seam (attrs `model/turns/tool_count/
+cost_usd/stop_reason/streaming`); ③ a per-tool child span `agent.tool <name>` from the
+live message stream (attrs `tool.name/tool.ok`, api-observed latency); ④ `agent.cost_usd`
++ `agent.turns` as OTel metrics (App Insights `customMetrics`); ⑤ exceptions recorded on
+the active span from the global `HttpExceptionsFilter` + the SSE error seam; ⑥ SSE
+lifecycle as attributes on the request span (first-event ms, frame count, end reason —
+`ok/error/abort`), **not** a span per frame.
+
+**Defer (explicit):** custom dashboards/workbooks (use transaction search + saved KQL in
+the runbook); deep business metrics; web/RUM client telemetry; alerting/action groups;
+cross-process tracing into the binary + web→api propagation; per-tool in-DB timing;
+sampling/retention tuning.
+
+**Wiring.** A workspace-based `Microsoft.Insights/components` on the existing
+`ledgerlens-law`; its connection string stored as the **api-only** ACA secret
+`appinsights-connection-string`, surfaced as `APPLICATIONINSIGHTS_CONNECTION_STRING`.
+Init via `node --import ./dist/observability/instrumentation.js` (the api Dockerfile CMD),
+which calls `useAzureMonitor` **only when the env var is present**. The MCP child does
+**not** receive the connection string (mirrors how the API key is withheld).
+
+**Hardening bundled (ADR-0013 §7).** A user-assigned managed identity with `AcrPull` on
+both apps + the migrate Job; `registries` authenticate by identity; **ACR admin user
+disabled**; `deploy.sh` push → `az acr login`. Zero stored registry passwords. Key Vault
+for secrets stays deferred.
+
+**Gating guardrails (determinism-safe).** (a) Telemetry export is async and **never
+awaited** in the request path — after instrumenting, **re-run the 2c SSE gate** and show
+the frames still arrive un-buffered. (b) The instrumentation **no-ops without the env
+var** — the unit/integration suites and the eval run unchanged (no telemetry, no cost on
+the wire); show them green.
+
+**Acceptance (2d):** request traces visible · `agent.ask` + `agent.tool` child spans
+visible in App Insights · `agent.cost_usd`/`agent.turns` queryable via KQL · 2c SSE gate
+still un-buffered · `GET /health` still dependency-free · no cost on the wire · eval +
+tests green.
 
 **7. CI/CD: GitHub Actions + OIDC + Bicep.** A new **`deploy.yml`**, separate from
 `ci.yml`/`eval.yml`, **manual dispatch** (optionally on push to `main`), gated on
@@ -122,15 +165,17 @@ between demos; short log retention.
 *Ships:* two Dockerfiles (ADR-0012); Bicep for ACR + ACA env + Log Analytics + two
 Container Apps + Postgres Flexible Server + secrets; the migrate+seed ACA Job;
 `deploy.yml` (OIDC, build/push, Bicep deploy); App Insights via Azure Monitor OTel
-(request traces + the agent-run span); `GET /health` + TLS to Postgres; the cloud
-SSE verification; a runbook.
+(request traces + the agent-run span + **in-process per-tool spans**, ADR-0013) and
+**managed-identity ACR pull** (admin user disabled); `GET /health` + TLS to Postgres;
+the cloud SSE verification; a runbook.
 
 *Defers:* custom domain + managed cert (use the default `*.azurecontainerapps.io`);
-Key Vault + managed identity; autoscaling tuning beyond scale-to-zero; running the
-**eval in-cloud** (stays in GitHub Actions / testcontainers — ADR-0009 untouched);
-per-tool-call tracing into the `claude` subprocess and web→api trace propagation;
-VNet/private Postgres; blue/green, multi-env, automated rollback; web CDN/static
-optimization.
+**Key Vault-backed secrets** (managed-identity ACR pull ships in 2d; ACA secrets keep
+the connection strings); autoscaling tuning beyond scale-to-zero; running the **eval
+in-cloud** (stays in GitHub Actions / testcontainers — ADR-0009 untouched);
+**cross-process** tracing into the `claude` subprocess and web→api trace propagation;
+web/RUM client telemetry; alerting; VNet/private Postgres; blue/green, multi-env,
+automated rollback; web CDN/static optimization.
 
 ## Prep changes (small, deterministic, before infra)
 
