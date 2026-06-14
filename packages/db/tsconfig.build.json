@@ -1,0 +1,14 @@
+{
+  "$comment": "Production emit (ADR-0012). Emits runnable ESM to dist/; tests excluded.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.itest.ts"]
+}

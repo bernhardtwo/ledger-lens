@@ -1,0 +1,21 @@
+{
+  "$comment": "Production emit (ADR-0012). Emits runnable ESM to dist/ run with plain node. Tests, fixtures, manual smokes, and the eval harness (CI-only, not deployed) are excluded from the shipped image.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "experimentalDecorators": true,
+    "types": ["node", "express", "multer"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.itest.ts",
+    "src/**/__fixtures__/**",
+    "src/**/smoke*.ts",
+    "src/evals/**"
+  ]
+}

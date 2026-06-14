@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "files": ["dist"],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "start": "node --env-file=../../.env --import tsx ./src/http/main.ts",
     "dev": "node --env-file=../../.env --import tsx ./src/http/main.ts",

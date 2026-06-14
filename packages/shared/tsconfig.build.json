@@ -1,0 +1,13 @@
+{
+  "$comment": "Production emit (ADR-0012). Extends base directly (not the composite typecheck config) and emits runnable ESM to dist/; the .js import specifiers already resolve to the emitted .js. Tests are excluded from the shipped output.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.itest.ts"]
+}

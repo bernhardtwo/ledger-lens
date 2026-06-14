@@ -15,6 +15,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "dev": "docker compose up -d postgres && pnpm --parallel --filter @ledger-lens/web --filter @ledger-lens/api run dev",
+    "build:api": "pnpm --filter @ledger-lens/shared --filter @ledger-lens/db --filter @ledger-lens/mcp-server --filter @ledger-lens/api run build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run --project node --project web",
     "test:watch": "vitest --project node --project web",
