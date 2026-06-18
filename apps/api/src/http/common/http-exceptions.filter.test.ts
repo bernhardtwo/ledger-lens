@@ -11,10 +11,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { HttpExceptionsFilter } from "./http-exceptions.filter.js";
 
 // A response double capturing the status/body the filter writes.
-function fakeHost(): { host: ArgumentsHost; res: { statusCode: number; body: unknown } } {
+function fakeHost(): {
+  host: ArgumentsHost;
+  res: { statusCode: number; body: unknown; headersSent: boolean };
+} {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
+    headersSent: false,
     status(code: number) {
       this.statusCode = code;
       return this;
@@ -89,5 +93,21 @@ describe("HttpExceptionsFilter — span recording (ADR-0013)", () => {
     expect(status).toBe(404);
     expect(recorded.status.code).not.toBe(SpanStatusCode.ERROR);
     expect(recorded.events.some((e) => e.name === "exception")).toBe(false);
+  });
+});
+
+describe("HttpExceptionsFilter — response already committed", () => {
+  // A fault that escapes after the SSE stream has flushed its 200 (ADR-0010) must not
+  // re-send headers; doing so throws ERR_HTTP_HEADERS_SENT and escapes as an unhandled
+  // rejection (the second half of the destroyed-socket bug).
+  it("does not write again once the headers were sent", () => {
+    const filter = new HttpExceptionsFilter();
+    const { host, res } = fakeHost();
+    res.headersSent = true;
+
+    filter.catch(new Error("write after stream start"), host);
+
+    expect(res.statusCode).toBe(0);
+    expect(res.body).toBeUndefined();
   });
 });

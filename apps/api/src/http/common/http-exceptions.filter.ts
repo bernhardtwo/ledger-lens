@@ -66,6 +66,12 @@ export class HttpExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
 
+    // The SSE path may have already flushed its 200 + headers (ADR-0010); re-writing
+    // them here throws ERR_HTTP_HEADERS_SENT and escapes as an unhandled rejection.
+    if (response.headersSent) {
+      return;
+    }
+
     if (exception instanceof IngestionError) {
       response.status(INGESTION_STATUS[exception.kind]).json({
         error: exception.kind,

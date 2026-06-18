@@ -84,15 +84,23 @@ export class AskStreamService {
       if (!closed) {
         // Already streaming: the status is sent, so degrade to a terminal error event.
         endReason = "error";
-        res.write(
-          `data: ${JSON.stringify({ type: "error", code: "agent_error", message: "the agent could not complete the request" })}\n\n`,
-        );
+        try {
+          res.write(
+            `data: ${JSON.stringify({ type: "error", code: "agent_error", message: "the agent could not complete the request" })}\n\n`,
+          );
+        } catch {
+          // the socket may already be destroyed; there is nothing left to degrade to
+        }
       } else {
         endReason = "abort";
       }
     } finally {
       if (open && !closed) {
-        res.end();
+        try {
+          res.end();
+        } catch {
+          // socket already gone; the response is over regardless
+        }
       }
       const span = trace.getActiveSpan();
       if (span !== undefined) {
