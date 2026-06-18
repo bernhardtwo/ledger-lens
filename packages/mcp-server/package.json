@@ -30,7 +30,6 @@
   "devDependencies": {
     "@testcontainers/postgresql": "^10.16.0",
     "@types/node": "^22.10.5",
-    "testcontainers": "^10.16.0",
     "tsx": "^4.19.2"
   }
 }
