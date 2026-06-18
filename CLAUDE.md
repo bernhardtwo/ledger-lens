@@ -107,3 +107,6 @@ managed-identity ACR pull (no stored registry password), App Insights + OpenTele
 (agent-run + per-tool spans, cost/turns metrics; ADR-0013), and the cloud-SSE-through-
 Envoy gate verified un-buffered. Ops: `infra/RUNBOOK.md`. Deferred Phase 7 follow-ups: a
 GitHub Actions `deploy.yml` (OIDC) and Key Vault-backed secrets.
+
+**Phase 8 — polish & presentation — is the current work:** the public README, the curated
+eval report (`docs/eval-report.md`), demo assets, and the docs index (`docs/README.md`).
