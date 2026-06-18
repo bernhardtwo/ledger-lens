@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { money, toMoneyDTO } from "./money.js";
 import {
-  type Transaction,
   TransactionDraftSchema,
   TransactionListItemSchema,
   TransactionSchema,
-  parseTransaction,
-  toTransactionDTO,
-  toTransactionListItemDTO,
 } from "./transaction.js";
 
 const VALID_DTO = {
@@ -23,22 +18,9 @@ const VALID_DTO = {
   rawRow: { Date: "05/01/2026", Amount: "-5.00", Memo: "COFFEE BAR #12" },
 } as const;
 
-describe("Transaction parsing & boundary mapping", () => {
-  it("parses a valid DTO into a domain entity with a Money amount", () => {
-    const tx = parseTransaction(VALID_DTO);
-    expect(tx.amount).toEqual(money(500n, "USD")); // bigint magnitude, not a string
-    expect(tx.direction).toBe("debit");
-    expect(tx.transactionDate).toBe("2026-05-01");
-    expect(tx.postedDate).toBe("2026-05-03");
-  });
-
-  it("round-trips DTO -> domain -> DTO exactly", () => {
-    expect(toTransactionDTO(parseTransaction(VALID_DTO))).toEqual(VALID_DTO);
-  });
-
+describe("Transaction parsing", () => {
   it("accepts a null postedDate (canonical date is transactionDate)", () => {
-    const tx = parseTransaction({ ...VALID_DTO, postedDate: null });
-    expect(tx.postedDate).toBeNull();
+    expect(TransactionSchema.safeParse({ ...VALID_DTO, postedDate: null }).success).toBe(true);
   });
 
   it("treats amount as a non-negative magnitude with direction carrying the sign", () => {
@@ -84,16 +66,6 @@ describe("Transaction adversarial inputs", () => {
 });
 
 describe("Transaction projections", () => {
-  const tx: Transaction = parseTransaction(VALID_DTO);
-
-  it("excludes rawRow from the list projection", () => {
-    const item = toTransactionListItemDTO(tx);
-    expect("rawRow" in item).toBe(false);
-    expect(item.id).toBe(tx.id);
-    expect(item.amount).toEqual(toMoneyDTO(tx.amount));
-    expect(TransactionListItemSchema.safeParse(item).success).toBe(true);
-  });
-
   it("list projection schema strips an incoming rawRow rather than carrying it", () => {
     const parsed = TransactionListItemSchema.parse(VALID_DTO);
     expect("rawRow" in parsed).toBe(false);

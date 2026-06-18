@@ -18,7 +18,7 @@
  * - **Domain vs. boundary.** In memory `amount` is a `Money` value object
  *   (`bigint` minor units). At the boundary `TransactionSchema` (the DTO) carries
  *   `amount` as a `MoneyDTO` (string minor units) and dates as ISO strings, since
- *   `bigint` is not JSON. `toTransactionDTO` / `parseTransaction` cross the line.
+ *   `bigint` is not JSON.
  *
  * - **`rawRow` is audit-only and not a default projection.** The original CSV row
  *   is retained for replay/audit but excluded from the list projection
@@ -27,7 +27,7 @@
  */
 import { z } from "zod";
 import { type IsoDate, IsoDateSchema } from "./iso-date.js";
-import { type Money, MoneySchema, money, toMoneyDTO } from "./money.js";
+import { type Money, MoneySchema } from "./money.js";
 
 /** Direction of value flow. `"debit"` = money out of the account; `"credit"` = in. */
 export const DirectionSchema = z.enum(["debit", "credit"]);
@@ -115,56 +115,3 @@ export type TransactionListItem = Omit<Transaction, "rawRow">;
  * the persistence layer (`@ledger-lens/db`).
  */
 export type TransactionDraft = Omit<Transaction, "id" | "statementId">;
-
-/** Serialize a `Transaction` to its full JSON-safe DTO (includes `rawRow`). */
-export function toTransactionDTO(transaction: Transaction): TransactionDTO {
-  return {
-    id: transaction.id,
-    accountId: transaction.accountId,
-    statementId: transaction.statementId,
-    transactionDate: transaction.transactionDate,
-    postedDate: transaction.postedDate,
-    description: transaction.description,
-    direction: transaction.direction,
-    amount: toMoneyDTO(transaction.amount),
-    fingerprint: transaction.fingerprint,
-    rawRow: { ...transaction.rawRow },
-  };
-}
-
-/** Serialize a `Transaction` to the list projection DTO (drops `rawRow`). */
-export function toTransactionListItemDTO(transaction: Transaction): TransactionListItemDTO {
-  return {
-    id: transaction.id,
-    accountId: transaction.accountId,
-    statementId: transaction.statementId,
-    transactionDate: transaction.transactionDate,
-    postedDate: transaction.postedDate,
-    description: transaction.description,
-    direction: transaction.direction,
-    amount: toMoneyDTO(transaction.amount),
-    fingerprint: transaction.fingerprint,
-  };
-}
-
-/** Validate and deserialize an unknown input into a `Transaction` at a boundary. */
-export function parseTransaction(input: unknown): Transaction {
-  const dto = TransactionSchema.parse(input);
-  // `dto.amount` is already a validated `MoneyDTO` (TransactionSchema embeds
-  // MoneySchema, regex + registry cross-check included). Construct the value
-  // object directly instead of re-running `parseMoney` — one validation pass,
-  // not two. `money()` re-derives the exponent from the registry, the source of
-  // truth, so the wire-provided exponent is never trusted here either.
-  return {
-    id: dto.id,
-    accountId: dto.accountId,
-    statementId: dto.statementId,
-    transactionDate: dto.transactionDate,
-    postedDate: dto.postedDate,
-    description: dto.description,
-    direction: dto.direction,
-    amount: money(BigInt(dto.amount.amount), dto.amount.currency),
-    fingerprint: dto.fingerprint,
-    rawRow: dto.rawRow,
-  };
-}

@@ -5,9 +5,7 @@ import {
   addMoney,
   compareMoney,
   fromDecimalString,
-  isZeroMoney,
   money,
-  parseMoney,
   subtractMoney,
   toDecimalString,
   toMoneyDTO,
@@ -26,7 +24,7 @@ describe("money construction", () => {
   });
 
   it("exposes a zero constructor", () => {
-    expect(isZeroMoney(zeroMoney("EUR"))).toBe(true);
+    expect(zeroMoney("EUR").amount).toBe(0n);
   });
 });
 
@@ -122,12 +120,10 @@ describe("arithmetic", () => {
 });
 
 describe("serialization boundary", () => {
-  it("round-trips through the DTO / Zod schema", () => {
-    const original = money(123456n, "USD");
-    const dto = toMoneyDTO(original);
+  it("serializes to a DTO the Zod schema accepts", () => {
+    const dto = toMoneyDTO(money(123456n, "USD"));
     expect(dto).toEqual({ amount: "123456", currency: "USD", minorUnitExponent: 2 });
     expect(MoneySchema.safeParse(dto).success).toBe(true);
-    expect(parseMoney(dto)).toEqual(original);
   });
 
   it("rejects a DTO whose exponent disagrees with its currency", () => {

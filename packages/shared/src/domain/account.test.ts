@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccountSchema, parseAccount } from "./account.js";
+import { AccountSchema } from "./account.js";
 
 const VALID = {
   id: "00000000-0000-4000-8000-000000000000",
@@ -11,7 +11,7 @@ const VALID = {
 
 describe("Account", () => {
   it("parses a valid account", () => {
-    const account = parseAccount(VALID);
+    const account = AccountSchema.parse(VALID);
     expect(account.currency).toBe("USD");
     expect(account.kind).toBe("bank");
   });
@@ -28,7 +28,7 @@ describe("Account", () => {
   });
 
   it("strips unknown keys (no extra fields leak through)", () => {
-    const parsed = parseAccount({ ...VALID, secret: "x" });
+    const parsed = AccountSchema.parse({ ...VALID, secret: "x" });
     expect("secret" in parsed).toBe(false);
   });
 });

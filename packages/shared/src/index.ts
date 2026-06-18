@@ -22,7 +22,6 @@ export * from "./domain/money.js";
 export * from "./domain/iso-date.js";
 export * from "./domain/text.js";
 export * from "./domain/account.js";
-export * from "./domain/statement.js";
 export * from "./domain/transaction.js";
 // Enrichment (Phase 2): the closed category taxonomy assigned by the LLM.
 export * from "./domain/category.js";

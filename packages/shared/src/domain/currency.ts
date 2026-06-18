@@ -38,8 +38,3 @@ const MINOR_UNIT_EXPONENTS: Record<CurrencyCode, number> = {
 export function minorUnitExponentOf(currency: CurrencyCode): number {
   return MINOR_UNIT_EXPONENTS[currency];
 }
-
-/** Type guard: is an arbitrary string a currency code the project supports? */
-export function isCurrencyCode(value: string): value is CurrencyCode {
-  return Object.hasOwn(MINOR_UNIT_EXPONENTS, value);
-}

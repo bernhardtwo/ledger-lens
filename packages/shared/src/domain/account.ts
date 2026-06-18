@@ -27,8 +27,3 @@ export const AccountSchema = z.object({
 
 /** An account; JSON-safe, so domain and DTO coincide. */
 export type Account = z.infer<typeof AccountSchema>;
-
-/** Validate an unknown input into an `Account` at a trust boundary. */
-export function parseAccount(input: unknown): Account {
-  return AccountSchema.parse(input);
-}

@@ -130,14 +130,6 @@ export function moneyDtoToDecimalString(dto: MoneyDTO): string {
   return toDecimalString(money(BigInt(dto.amount), dto.currency));
 }
 
-/** Validate and deserialize an unknown input into `Money` at a trust boundary. */
-export function parseMoney(input: unknown): Money {
-  const dto = MoneySchema.parse(input);
-  // dto.minorUnitExponent was validated as a cross-check; the registry is the
-  // source of truth, so money() re-derives it rather than trusting the wire.
-  return money(BigInt(dto.amount), dto.currency);
-}
-
 function assertSameCurrency(a: Money, b: Money): void {
   if (a.currency !== b.currency) {
     throw new MoneyError(`currency mismatch: ${a.currency} vs ${b.currency} — no implicit FX`);
@@ -171,9 +163,4 @@ export function compareMoney(a: Money, b: Money): -1 | 0 | 1 {
     return -1;
   }
   return a.amount > b.amount ? 1 : 0;
-}
-
-/** Is this amount exactly zero? */
-export function isZeroMoney(value: Money): boolean {
-  return value.amount === 0n;
 }
