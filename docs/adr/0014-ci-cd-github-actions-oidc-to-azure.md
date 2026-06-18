@@ -1,6 +1,6 @@
 # 0014. CI/CD: GitHub Actions deploys to Azure Container Apps via OIDC
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-18
 
 ## Context
@@ -29,10 +29,10 @@ Forces at play:
   gains nothing from being continuously current, and the deploy's own
   migrate/seed/verify + smoke require a **running** DB. So "deploy on every push to
   main" is wrong on both cost and correctness.
-- **Tenant capability is uncertain.** The target is an **Azure for Students**
-  subscription with documented restrictions (region policy, ACR Tasks). Whether it
-  permits creating an Entra app registration + federated credential + resource-group
-  role assignments is **not verified** and must not be assumed.
+- **Tenant capability was the open risk.** The target is an **Azure for Students**
+  subscription with documented restrictions (region policy, ACR Tasks), so whether it
+  permits creating the federated identity + resource-group role assignment could not
+  be assumed — it had to be probed (resolved below).
 
 Determinism-first (ADR-0004) is unaffected: CI/CD adds no LLM surface. The optional
 eval gate exercises the **existing** agent (ADR-0008/0009), not a new one.
@@ -47,7 +47,12 @@ two-pass flow `deploy.sh` runs. No parallel IaC.
 credential trusts GitHub's OIDC token (subject scoped to this repo and the specific
 ref/environment), so the job receives a short-lived Azure token with no client
 secret in GitHub. This is the recommended option precisely because it keeps **no
-long-lived cloud credential** anywhere in the CI system.
+long-lived cloud credential** anywhere in the CI system. **Resolved to rung 1**
+(user-assigned managed identity), verified working against the live subscription:
+the UAMI `ledgerlens-gh-oidc` in `rg-ledgerlens` (clientId
+`518a5940-6d3b-4518-9f36-546990f42f24`) carries a federated credential `gh-main` for
+subject `repo:bernhardtwo/ledger-lens:ref:refs/heads/main` (issuer GitHub Actions
+OIDC, audience `api://AzureADTokenExchange`) — no Entra app registration, no secret.
 
 **3. Identity scoping: resource-group-scoped, not subscription-wide.** The
 federated identity is granted roles on `rg-ledgerlens` only. Honest consequence:
@@ -55,7 +60,11 @@ because the Bicep **self-assigns `AcrPull`** (`main.bicep` `roleAssignments`), t
 deploying principal needs role-assignment write — so the RG-scoped grant is
 realistically **Owner** (or **Contributor + User Access Administrator**), plus the
 ability to **push to ACR** (`AcrPush`), not bare Contributor. A tighter split is in
-§Alternatives.
+§Alternatives. **Resolved:** the UAMI holds `AcrPush` on the ACR plus Owner on
+`rg-ledgerlens` (Contributor + User Access Administrator is the equivalent split) —
+RG-scoped, **not** subscription-wide. The one-time grant is created by the repo
+owner, who is Owner at subscription scope and so has the role-assignment write for it
+(this does not make the UAMI itself subscription-scoped).
 
 **4. Image build on the runner.** Build both glibc images on the GitHub runner and
 push to ACR via `az acr login` (AAD token; the ACR admin user stays disabled,
@@ -81,20 +90,19 @@ the deploy still needs `ANTHROPIC_API_KEY` and the Postgres admin password (→
 Vault** decision moves them. This ADR is scoped to CI/CD **auth + deploy**;
 Key Vault-backed secrets remain a separate, deferred ADR (spec 0007 §5).
 
-**Precondition to verify before implementing — do not assume it works.** Confirm
-that the tenant permits (a) creating the federated identity and (b) creating the
-RG-scoped role assignment(s) it needs. Entra app-registration creation and
-`Microsoft.Authorization/roleAssignments/write` are commonly restricted on
-student/managed tenants. Probe read-only first, then pick the highest rung the
-tenant actually allows from this chain:
+**Capability probe — verified; rung 1 chosen.** The open question (does the tenant
+permit creating the federated identity and the RG-scoped role assignment?) was
+probed against the live subscription and resolved to **rung 1** — the user-assigned
+managed identity in Decision §2 — with no Entra app registration and no stored
+secret. The chain that was considered, highest preference first:
 
-1. **User-assigned managed identity + federated credential** — no app registration,
-   no secret. Preferred, if the tenant allows UAMI federated credentials and the RG
-   role assignment.
+1. **User-assigned managed identity + federated credential** — ✅ **chosen** (see §2).
+   The tenant allows the UAMI federated credential and the RG role assignment; the
+   repo owner is subscription Owner, so the one-time role-assignment write is available.
 2. **Entra app registration + federated credential** — equivalent OIDC, but needs
-   app-registration rights.
+   app-registration rights. Not needed once rung 1 worked.
 3. **Stored service-principal secret in GitHub Secrets** — last resort, only if
-   federation is disallowed entirely. A long-lived, manually-rotated credential.
+   federation were disallowed entirely. A long-lived, manually-rotated credential.
 
 ## Alternatives considered
 
@@ -128,9 +136,7 @@ tenant actually allows from this chain:
   (Owner / Contributor + User Access Administrator + AcrPush) because the IaC
   self-assigns a role — the tighter split is documented, not taken; app secrets stay
   in GitHub Secrets until Key Vault; the manual trigger means deploys are not
-  automatic (intended — it is the cost lever); the OIDC path is **contingent on a
-  tenant capability not yet verified** (fallback chain above).
-- **Follow-ups:** verify the tenant capability, then write `deploy.yml` per this ADR
-  (the workflow is intentionally not part of this ADR); move app secrets to Key Vault
-  (separate deferred ADR); optionally add the on-demand eval-gate job (ADR-0009).
-  Flip this ADR to **Accepted** once the capability probe pins a concrete rung.
+  automatic (intended — it is the cost lever).
+- **Follow-ups:** write `deploy.yml` per this ADR and its spec (the workflow is
+  intentionally not part of this ADR); move app secrets to Key Vault (separate
+  deferred ADR); optionally add the on-demand eval-gate job (ADR-0009).
