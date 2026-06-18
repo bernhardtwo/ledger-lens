@@ -33,7 +33,13 @@ export class MoneyError extends Error {
  */
 export const MoneySchema = z
   .object({
-    amount: z.string().regex(/^\d+$/, "amount must be non-negative minor units"),
+    // Canonical minor units: no leading zeros (the inverse of `toDecimalString`, and
+    // matching `fromDecimalString`), plus a length cap so a hostile client cannot force
+    // an unbounded `BigInt` allocation at the boundary.
+    amount: z
+      .string()
+      .regex(/^(0|[1-9]\d*)$/, "amount must be canonical non-negative minor units")
+      .max(30, "amount exceeds the maximum supported magnitude"),
     currency: CurrencyCodeSchema,
     // Exact value is pinned against the registry in superRefine below; here we
     // only require a non-negative integer (no magic upper bound to drift).

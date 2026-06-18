@@ -139,4 +139,13 @@ describe("serialization boundary", () => {
       MoneySchema.safeParse({ amount: "1.5", currency: "USD", minorUnitExponent: 2 }).success,
     ).toBe(false);
   });
+
+  it("pins the canonical amount form: no leading zeros, bounded length", () => {
+    const base = { currency: "USD", minorUnitExponent: 2 } as const;
+    expect(MoneySchema.safeParse({ ...base, amount: "0" }).success).toBe(true);
+    expect(MoneySchema.safeParse({ ...base, amount: "007" }).success).toBe(false);
+    expect(MoneySchema.safeParse({ ...base, amount: "01" }).success).toBe(false);
+    expect(MoneySchema.safeParse({ ...base, amount: "9".repeat(30) }).success).toBe(true);
+    expect(MoneySchema.safeParse({ ...base, amount: "9".repeat(31) }).success).toBe(false);
+  });
 });
