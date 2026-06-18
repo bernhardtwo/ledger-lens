@@ -1,0 +1,43 @@
+name: Deploy
+
+# Manual only: a deploy costs money and assumes a running DB, which is parked between
+# demos (ADR-0014 cost reasoning). Deliberately never on push.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required to mint the OIDC token azure/login federates to Azure
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # OIDC workload-identity federation against the UAMI (ADR-0014); no stored
+      # cloud credential. clientId/tenantId/subscriptionId are repo variables.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # deploy.sh owns the whole flow: build+push both images on the runner (ACR Tasks
+      # is blocked on this sub -> BUILD_MODE=local) and the two-pass `az deployment
+      # group create` over infra/main.bicep. We call it rather than re-implement it.
+      - name: Deploy via infra/deploy.sh
+        env:
+          BUILD_MODE: local
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+        run: bash infra/deploy.sh
