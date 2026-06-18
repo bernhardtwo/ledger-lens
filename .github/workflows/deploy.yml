@@ -15,15 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
       # OIDC workload-identity federation against the UAMI (ADR-0014); no stored
       # cloud credential. clientId/tenantId/subscriptionId are repo variables.
       - uses: azure/login@v2
